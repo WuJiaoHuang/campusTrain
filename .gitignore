@@ -1,0 +1,86 @@
+# =========================
+# Java compiled files
+# =========================
+*.class
+
+# =========================
+# Maven
+# =========================
+target/
+**/target/
+
+# Maven wrapper jar should normally be kept
+# .mvn/
+# mvnw
+# mvnw.cmd
+
+# =========================
+# IntelliJ IDEA
+# =========================
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# =========================
+# VS Code
+# =========================
+.vscode/
+
+# =========================
+# Eclipse
+# =========================
+.classpath
+.project
+.settings/
+bin/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+**/logs/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Temporary files
+# =========================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.cache/
+
+# =========================
+# Spring Boot
+# =========================
+spring.log
+
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Java crash logs
+# =========================
+hs_err_pid*
+replay_pid*
+
+# =========================
+# Package / build outputs
+# =========================
+*.jar
+*.war
+*.ear
