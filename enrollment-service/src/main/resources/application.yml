@@ -1,0 +1,12 @@
+# enrollment-service
+server:
+  port: 8083
+
+spring:
+  application:
+    name: enrollment-service
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.10.102:8848

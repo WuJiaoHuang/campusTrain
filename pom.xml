@@ -25,6 +25,9 @@
 
     <modules>
         <module>campus-gateway</module>
+        <module>user-service</module>
+        <module>training-service</module>
+        <module>enrollment-service</module>
     </modules>
 
     <dependencyManagement>

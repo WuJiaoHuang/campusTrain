@@ -1,0 +1,12 @@
+# training-service
+server:
+  port: 8082
+
+spring:
+  application:
+    name: training-service
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.10.102:8848
