@@ -82,6 +82,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
 
     @Override
     public Page<TrainingVO> pageTrainings(TrainingPageQueryDTO dto) {
+        //创建一个分页对象
         Page<Training> page = new Page<>(dto.getPageNum(), dto.getPageSize());
         LambdaQueryWrapper<Training> queryWrapper = new LambdaQueryWrapper<Training>()
                 .like(StringUtils.hasText(dto.getTitle()), Training::getTitle, dto.getTitle())
@@ -99,6 +100,8 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         return voPage;
     }
 
+    //修改培训的生命周期状态，状态只能一步一步向后流转
+    //0：待发布 1：报名中  2：进行中  3：已结束
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void changeStatus(Long id, Integer targetStatus) {

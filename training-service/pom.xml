@@ -54,6 +54,13 @@
             <version>3.5.15</version>
         </dependency>
 
+        <!-- Knife4j / OpenAPI for Spring Boot 4 -->
+        <dependency>
+            <groupId>com.baizhukui</groupId>
+            <artifactId>knife4j-openapi3-boot4-spring-boot-starter</artifactId>
+            <version>5.7.6</version>
+        </dependency>
+
         <!-- 健康检查 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

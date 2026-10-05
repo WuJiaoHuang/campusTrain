@@ -8,16 +8,19 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+//生成日志对象
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    //如果发生BusinessException,请调用下面这个方法
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusinessException(BusinessException e) {
         log.warn("business exception, message={}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
     }
 
+    //处理@Valid+@RequestBody参数校验失败的问题
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public Result<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().stream()

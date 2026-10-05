@@ -16,3 +16,10 @@ spring:
     url: jdbc:mysql://192.168.10.102:3306/campus_training?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root
     password: 123
+
+knife4j:
+  enable: true
+
+springdoc:
+  packages-to-scan: com.campustrain.trainingservice.controller
+  paths-to-match: /trainings/**
