@@ -6,13 +6,28 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
 import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
+import com.campustrain.trainingservice.entity.Chapter;
+import com.campustrain.trainingservice.entity.Course;
+import com.campustrain.trainingservice.entity.Lesson;
 import com.campustrain.trainingservice.entity.Training;
 import com.campustrain.trainingservice.exception.BusinessException;
+import com.campustrain.trainingservice.mapper.ChapterMapper;
+import com.campustrain.trainingservice.mapper.CourseMapper;
+import com.campustrain.trainingservice.mapper.LessonMapper;
 import com.campustrain.trainingservice.mapper.TrainingMapper;
 import com.campustrain.trainingservice.service.TrainingService;
+import com.campustrain.trainingservice.vo.ChapterCatalogVO;
+import com.campustrain.trainingservice.vo.CourseCatalogVO;
+import com.campustrain.trainingservice.vo.LessonCatalogVO;
+import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +35,12 @@ import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> implements TrainingService {
+
+    private final CourseMapper courseMapper;
+    private final ChapterMapper chapterMapper;
+    private final LessonMapper lessonMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -132,6 +152,63 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         );
     }
 
+    @Override
+    public TrainingCatalogVO getTrainingCatalog(Long trainingId) {
+        Training training = getExistingTraining(trainingId);
+        List<Course> courses = courseMapper.selectList(new LambdaQueryWrapper<Course>()
+                .eq(Course::getTrainingId, trainingId)
+                .orderByAsc(Course::getSort)
+                .orderByAsc(Course::getId));
+
+        List<Long> courseIds = courses.stream().map(Course::getId).toList();
+        List<Chapter> chapters = courseIds.isEmpty()
+                ? Collections.emptyList()
+                : chapterMapper.selectList(new LambdaQueryWrapper<Chapter>()
+                        .in(Chapter::getCourseId, courseIds)
+                        .orderByAsc(Chapter::getSort)
+                        .orderByAsc(Chapter::getId));
+
+        List<Long> chapterIds = chapters.stream().map(Chapter::getId).toList();
+        List<Lesson> lessons = chapterIds.isEmpty()
+                ? Collections.emptyList()
+                : lessonMapper.selectList(new LambdaQueryWrapper<Lesson>()
+                        .in(Lesson::getChapterId, chapterIds)
+                        .orderByAsc(Lesson::getSort)
+                        .orderByAsc(Lesson::getId));
+
+        Map<Long, List<Lesson>> lessonMap = lessons.stream()
+                .collect(Collectors.groupingBy(
+                        Lesson::getChapterId,
+                        Collectors.toList()
+                ));
+
+        Map<Long, List<Chapter>> chapterMap = chapters.stream()
+                .collect(Collectors.groupingBy(
+                        Chapter::getCourseId,
+                        Collectors.toList()
+                ));
+
+        TrainingCatalogVO catalogVO = new TrainingCatalogVO();
+        catalogVO.setTrainingId(training.getId());
+        catalogVO.setTrainingTitle(training.getTitle());
+        catalogVO.setCourses(courses.stream()
+                .map(course -> {
+                    CourseCatalogVO vo = convertToCourseCatalogVO(course);
+                    vo.setChapters(chapterMap.getOrDefault(course.getId(), new ArrayList<>()).stream()
+                            .map(chapter -> {
+                                ChapterCatalogVO chapterVO = convertToChapterCatalogVO(chapter);
+                                chapterVO.setLessons(lessonMap.getOrDefault(chapter.getId(), new ArrayList<>()).stream()
+                                        .map(this::convertToLessonCatalogVO)
+                                        .toList());
+                                return chapterVO;
+                            })
+                            .toList());
+                    return vo;
+                })
+                .toList());
+        return catalogVO;
+    }
+
     private Training getExistingTraining(Long id) {
         Training training = getById(id);
         if (training == null) {
@@ -170,6 +247,34 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         vo.setEndTime(training.getEndTime());
         vo.setCreateTime(training.getCreateTime());
         vo.setUpdateTime(training.getUpdateTime());
+        return vo;
+    }
+
+    private CourseCatalogVO convertToCourseCatalogVO(Course course) {
+        CourseCatalogVO vo = new CourseCatalogVO();
+        vo.setId(course.getId());
+        vo.setTitle(course.getTitle());
+        vo.setDescription(course.getDescription());
+        vo.setSort(course.getSort());
+        return vo;
+    }
+
+    private ChapterCatalogVO convertToChapterCatalogVO(Chapter chapter) {
+        ChapterCatalogVO vo = new ChapterCatalogVO();
+        vo.setId(chapter.getId());
+        vo.setTitle(chapter.getTitle());
+        vo.setSort(chapter.getSort());
+        return vo;
+    }
+
+    private LessonCatalogVO convertToLessonCatalogVO(Lesson lesson) {
+        LessonCatalogVO vo = new LessonCatalogVO();
+        vo.setId(lesson.getId());
+        vo.setTitle(lesson.getTitle());
+        vo.setLessonType(lesson.getLessonType());
+        vo.setSort(lesson.getSort());
+        vo.setVideoObjectKey(lesson.getVideoObjectKey());
+        vo.setVideoDuration(lesson.getVideoDuration());
         return vo;
     }
 }

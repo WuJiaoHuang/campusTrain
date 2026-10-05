@@ -6,6 +6,7 @@ import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
 import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
 import com.campustrain.trainingservice.entity.Training;
+import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
 
 public interface TrainingService extends IService<Training> {
@@ -19,4 +20,6 @@ public interface TrainingService extends IService<Training> {
     Page<TrainingVO> pageTrainings(TrainingPageQueryDTO dto);
 
     void changeStatus(Long id, Integer targetStatus);
+
+    TrainingCatalogVO getTrainingCatalog(Long trainingId);
 }

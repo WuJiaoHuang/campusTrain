@@ -7,6 +7,7 @@ import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
 import com.campustrain.trainingservice.dto.TrainingStatusDTO;
 import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
 import com.campustrain.trainingservice.service.TrainingService;
+import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -62,5 +63,13 @@ public class TrainingController {
     public Result<Void> changeStatus(@Valid @RequestBody TrainingStatusDTO dto) {
         trainingService.changeStatus(dto.getId(), dto.getStatus());
         return Result.success();
+    }
+
+    @Operation(summary = "查询培训课程目录")
+    @GetMapping("/{trainingId}/catalog")
+    public Result<TrainingCatalogVO> getTrainingCatalog(
+            @Parameter(description = "培训ID") @PathVariable("trainingId") Long trainingId
+    ) {
+        return Result.success(trainingService.getTrainingCatalog(trainingId));
     }
 }

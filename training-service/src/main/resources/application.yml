@@ -22,4 +22,4 @@ knife4j:
 
 springdoc:
   packages-to-scan: com.campustrain.trainingservice.controller
-  paths-to-match: /trainings/**
+  paths-to-match: /trainings/**,/courses/**,/chapters/**,/lessons/**

@@ -3,6 +3,7 @@ package com.campustrain.trainingservice.exception;
 import com.campustrain.trainingservice.common.Result;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
         log.warn("request bind validation failed, message={}", message);
         return Result.fail(400, message);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public Result<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        log.warn("request body not readable, message={}", e.getMessage());
+        return Result.fail(400, "请求体格式不正确");
     }
 
     @ExceptionHandler(Exception.class)
