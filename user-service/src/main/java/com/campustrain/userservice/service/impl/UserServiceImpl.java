@@ -82,6 +82,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    //只要抛出Exception或它的子类，就回滚事务
     @Transactional(rollbackFor = Exception.class)
     public void updateUser(UserUpdateDTO dto) {
         User user = getExistingUser(dto.getId());

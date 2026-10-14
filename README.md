@@ -122,3 +122,46 @@ flowchart TD
 - Access Token 默认有效期为 2 小时，即 `7200000 ms`，接口返回的 `expiresIn` 单位是秒。
 - 阶段 5 不实现 Refresh Token。Access Token 到期后重新登录。
 - 登录请求中会设置当前请求的 `SecurityContext`，但 JWT 架构下后续请求不能依赖内存 Context 长期保存身份，后续请求必须通过 Token 重建身份。
+
+## 阶段 6：OpenFeign 跨服务报名链路
+
+阶段 6 新增 `enrollment-service`，报名时只通过 OpenFeign 获取用户与培训资料，不直接连接 `campus_user` 或 `campus_training`。
+
+```text
+Client
+  |
+  v
+enrollment-service
+  |-- Feign (user-service -> Nacos -> LoadBalancer -> HTTP GET /users/{id})
+  |     |
+  |     v
+  |  campus_user
+  |
+  `-- Feign (training-service -> Nacos -> LoadBalancer -> HTTP GET /trainings/{id})
+        |
+        v
+     campus_training
+
+enrollment-service -> campus_enrollment
+```
+
+Feign Client 使用服务名发现实例，不配置服务 IP 或 URL；Nacos 负责实例发现，Spring Cloud LoadBalancer 从健康实例中选择目标，OpenFeign 最终发起 HTTP 调用。远程 DTO 和远程响应包装均由 `enrollment-service` 独立维护，不复用其他服务的 Java 模型。
+
+### 报名接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/enrollments` | 创建培训报名，成功返回报名 ID |
+
+阶段 6 为验证 Feign 链路，`userId` 暂由 `EnrollmentCreateDTO` 请求体传入；阶段 7 将改为从 Gateway 透传的身份上下文获取。
+
+报名会校验用户存在、启用状态和 `STUDENT` 角色，以及培训存在、报名状态、报名时间窗口和基础容量。`enrollment` 表的 `uk_user_training (user_id, training_id)` 唯一索引与服务层预检查共同防止重复报名。
+
+当前容量校验是普通读取校验，不能解决高并发超卖；培训已报名人数的一致性和高并发更新将在后续报名并发阶段完成。本阶段不更新 `training.enrolled_count`，也不引入跨库操作或分布式事务。
+
+依赖服务不可用时，`enrollment-service` 记录带服务上下文的 Feign 错误日志，并向客户端返回明确的“用户服务暂时不可用”或“培训服务暂时不可用”。阶段 6 不提供 Sentinel 或 Feign fallback；这些能力安排在阶段 10。
+
+enrollment-service 启动后可访问：
+
+- Knife4j：`http://localhost:8083/doc.html`
+- OpenAPI JSON：`http://localhost:8083/v3/api-docs`

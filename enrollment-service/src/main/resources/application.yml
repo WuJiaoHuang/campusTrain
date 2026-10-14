@@ -10,3 +10,16 @@ spring:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.10.102:3306/campus_enrollment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123
+
+knife4j:
+  enable: true
+
+springdoc:
+  packages-to-scan: com.campustrain.enrollmentservice.controller
+  paths-to-match: /enrollments/**
