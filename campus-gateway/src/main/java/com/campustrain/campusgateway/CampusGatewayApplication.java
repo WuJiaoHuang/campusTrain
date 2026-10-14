@@ -10,4 +10,5 @@ public class CampusGatewayApplication {
         SpringApplication.run(CampusGatewayApplication.class, args);
     }
 
+
 }
