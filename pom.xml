@@ -28,6 +28,7 @@
         <module>user-service</module>
         <module>training-service</module>
         <module>enrollment-service</module>
+        <module>auth-service</module>
     </modules>
 
     <dependencyManagement>
