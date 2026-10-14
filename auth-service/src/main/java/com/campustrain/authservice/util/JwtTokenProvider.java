@@ -3,6 +3,7 @@ package com.campustrain.authservice.util;
 import com.campustrain.authservice.properties.JwtProperties;
 import com.campustrain.authservice.security.LoginUser;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -46,7 +47,11 @@ public class JwtTokenProvider {
     }
 
     public boolean isExpired(String token) {
-        return parseToken(token).getExpiration().before(new Date());
+        try {
+            return parseToken(token).getExpiration().before(new Date());
+        } catch (ExpiredJwtException e) {
+            return true;
+        }
     }
 
     public Long getUserId(String token) {
