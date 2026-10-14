@@ -114,6 +114,8 @@ flowchart TD
 
 这些账号仅用于开发环境。
 
+三个测试账号的明文密码均为 `123456`；`stage05_user.sql` 写入的是可供 Spring Security 校验的真实 BCrypt 哈希，而非明文密码。
+
 ### 密码与 Token 策略
 
 - 密码不能明文存储，因为数据库泄露时明文密码会直接暴露用户凭据；当前使用 Spring Security `BCryptPasswordEncoder` 生成 `password_hash`。
@@ -165,3 +167,15 @@ enrollment-service 启动后可访问：
 
 - Knife4j：`http://localhost:8083/doc.html`
 - OpenAPI JSON：`http://localhost:8083/v3/api-docs`
+
+### 阶段 6 数据库初始化
+
+SQL 文件放在项目中不会自动执行。当前需要手动按以下顺序执行：
+
+1. `user-service/sql/stage05_user.sql`
+2. `training-service/sql/stage06-feign-test-data.sql`
+3. `enrollment-service/sql/stage06_enrollment.sql`
+
+`stage06-feign-test-data.sql` 使用固定培训 ID `90001` 至 `90005`，通过 `INSERT ... ON DUPLICATE KEY UPDATE` 可重复执行，不会删除 Stage 4 数据。`stage06-test-clean.sql` 仅清理这五个培训对应的报名测试记录，不会清空报名表。
+
+当前不使用 Flyway 或 Liquibase，也不配置 `spring.sql.init.mode=always`。
