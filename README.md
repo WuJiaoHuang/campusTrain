@@ -155,7 +155,7 @@ Feign Client 使用服务名发现实例，不配置服务 IP 或 URL；Nacos �
 | --- | --- | --- |
 | POST | `/enrollments` | 创建培训报名，成功返回报名 ID |
 
-阶段 6 为验证 Feign 链路，`userId` 暂由 `EnrollmentCreateDTO` 请求体传入；阶段 7 将改为从 Gateway 透传的身份上下文获取。
+阶段 6 为验证 Feign 链路，`userId` 曾暂由 `EnrollmentCreateDTO` 请求体传入；阶段 7 后报名请求只传 `trainingId`，用户身份由 Gateway 透传的上下文提供。
 
 报名会校验用户存在、启用状态和 `STUDENT` 角色，以及培训存在、报名状态、报名时间窗口和基础容量。`enrollment` 表的 `uk_user_training (user_id, training_id)` 唯一索引与服务层预检查共同防止重复报名。
 
@@ -179,3 +179,24 @@ SQL 文件放在项目中不会自动执行。当前需要手动按以下顺序�
 `stage06-feign-test-data.sql` 使用固定培训 ID `90001` 至 `90005`，通过 `INSERT ... ON DUPLICATE KEY UPDATE` 可重复执行，不会删除 Stage 4 数据。`stage06-test-clean.sql` 仅清理这五个培训对应的报名测试记录，不会清空报名表。
 
 当前不使用 Flyway 或 Liquibase，也不配置 `spring.sql.init.mode=always`。
+
+## 阶段 7：Spring Cloud Gateway 统一入口
+
+Gateway 是系统统一入口，通过 Nacos 与 Spring Cloud LoadBalancer 将请求转发到 `auth-service`、`user-service`、`training-service` 与 `enrollment-service`。
+
+```text
+Client
+  -> Gateway
+  -> JWT 校验
+  -> X-User-Id / X-User-Role / X-Username / X-Trace-Id
+  -> enrollment-service
+  -> UserContext
+  -> Feign user-service / training-service
+  -> campus_enrollment
+```
+
+`POST /auth/login` 与 `GET /actuator/health` 不需要 Token。其他 Gateway 业务请求必须携带 `Authorization: Bearer <token>`；Gateway 使用与 auth-service 相同的 `JWT_SECRET` 和 JJWT 配置校验签名及有效期。
+
+客户端传入的 `X-User-Id`、`X-User-Role`、`X-Username` 与 `X-Trace-Id` 不可信。Gateway 会先移除身份 Header，再以 JWT Claims 生成真实身份 Header；TraceId 则接管客户端已有值或生成新的 UUID。enrollment-service 的 Servlet Filter 将可信 Header 写入 ThreadLocal `UserContext`，并在 `finally` 中清理，避免线程复用污染。
+
+阶段 7 后 `POST /enrollments` 的请求体只包含 `trainingId`，不再接收 `userId`。报名服务仍会通过 Feign 查询 user-service 做最终用户状态和角色校验。

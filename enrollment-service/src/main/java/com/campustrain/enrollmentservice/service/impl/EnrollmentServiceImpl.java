@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.enrollmentservice.client.TrainingClient;
 import com.campustrain.enrollmentservice.client.UserClient;
+import com.campustrain.enrollmentservice.context.UserContext;
 import com.campustrain.enrollmentservice.dto.EnrollmentCreateDTO;
 import com.campustrain.enrollmentservice.entity.Enrollment;
 import com.campustrain.enrollmentservice.exception.BusinessException;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
@@ -35,12 +37,15 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long enroll(EnrollmentCreateDTO dto) {
-        if (hasActiveEnrollment(dto.getUserId(), dto.getTrainingId())) {
-            log.warn("duplicate enrollment requested, userId={}, trainingId={}", dto.getUserId(), dto.getTrainingId());
+        Long userId = getCurrentUserId();
+        validateGatewayRole();
+        String traceId = UserContext.getTraceId();
+        if (hasActiveEnrollment(userId, dto.getTrainingId())) {
+            log.warn("duplicate enrollment requested, traceId={}, userId={}, trainingId={}", traceId, userId, dto.getTrainingId());
             throw new BusinessException("请勿重复报名");
         }
 
-        RemoteUserVO user = getRemoteUser(dto.getUserId());
+        RemoteUserVO user = getRemoteUser(userId);
         validateUser(user);
 
         RemoteTrainingVO training = getRemoteTraining(dto.getTrainingId());
@@ -48,7 +53,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
 
         LocalDateTime now = LocalDateTime.now();
         Enrollment enrollment = new Enrollment();
-        enrollment.setUserId(dto.getUserId());
+        enrollment.setUserId(userId);
         enrollment.setTrainingId(dto.getTrainingId());
         enrollment.setStatus(ENABLED_STATUS);
         enrollment.setEnrollTime(now);
@@ -57,17 +62,34 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         try {
             save(enrollment);
         } catch (DuplicateKeyException e) {
-            log.warn("duplicate enrollment blocked by database, userId={}, trainingId={}", dto.getUserId(), dto.getTrainingId(), e);
+            log.warn("duplicate enrollment blocked by database, traceId={}, userId={}, trainingId={}",
+                    traceId, userId, dto.getTrainingId(), e);
             throw new BusinessException("请勿重复报名");
         }
 
         log.info(
-                "enrollment created, enrollmentId={}, userId={}, trainingId={}",
+                "enrollment created, traceId={}, enrollmentId={}, userId={}, trainingId={}",
+                traceId,
                 enrollment.getId(),
                 enrollment.getUserId(),
                 enrollment.getTrainingId()
         );
         return enrollment.getId();
+    }
+
+    private Long getCurrentUserId() {
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "用户身份缺失，请先登录");
+        }
+        return userId;
+    }
+
+    private void validateGatewayRole() {
+        String role = UserContext.getRole();
+        if (StringUtils.hasText(role) && !STUDENT_ROLE.equals(role)) {
+            throw new BusinessException("仅学生用户可以报名");
+        }
     }
 
     private boolean hasActiveEnrollment(Long userId, Long trainingId) {
@@ -82,15 +104,18 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         try {
             result = userClient.getUserById(userId);
         } catch (FeignException e) {
-            log.error("remote user query failed, userId={}, httpStatus={}", userId, e.status(), e);
+            log.error("remote user query failed, traceId={}, userId={}, httpStatus={}",
+                    UserContext.getTraceId(), userId, e.status(), e);
             throw new BusinessException(503, "用户服务暂时不可用");
         } catch (Exception e) {
-            log.error("remote user query failed, userId={}, httpStatus=unavailable", userId, e);
+            log.error("remote user query failed, traceId={}, userId={}, httpStatus=unavailable",
+                    UserContext.getTraceId(), userId, e);
             throw new BusinessException(503, "用户服务暂时不可用");
         }
 
         if (result == null || result.getCode() == null || result.getCode() != SUCCESS_CODE || result.getData() == null) {
-            log.warn("remote user query returned failure, userId={}, code={}, message={}",
+            log.warn("remote user query returned failure, traceId={}, userId={}, code={}, message={}",
+                    UserContext.getTraceId(),
                     userId,
                     result == null ? null : result.getCode(),
                     result == null ? null : result.getMessage());
@@ -113,15 +138,18 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         try {
             result = trainingClient.getTrainingById(trainingId);
         } catch (FeignException e) {
-            log.error("remote training query failed, trainingId={}, httpStatus={}", trainingId, e.status(), e);
+            log.error("remote training query failed, traceId={}, trainingId={}, httpStatus={}",
+                    UserContext.getTraceId(), trainingId, e.status(), e);
             throw new BusinessException(503, "培训服务暂时不可用");
         } catch (Exception e) {
-            log.error("remote training query failed, trainingId={}, httpStatus=unavailable", trainingId, e);
+            log.error("remote training query failed, traceId={}, trainingId={}, httpStatus=unavailable",
+                    UserContext.getTraceId(), trainingId, e);
             throw new BusinessException(503, "培训服务暂时不可用");
         }
 
         if (result == null || result.getCode() == null || result.getCode() != SUCCESS_CODE || result.getData() == null) {
-            log.warn("remote training query returned failure, trainingId={}, code={}, message={}",
+            log.warn("remote training query returned failure, traceId={}, trainingId={}, code={}, message={}",
+                    UserContext.getTraceId(),
                     trainingId,
                     result == null ? null : result.getCode(),
                     result == null ? null : result.getMessage());

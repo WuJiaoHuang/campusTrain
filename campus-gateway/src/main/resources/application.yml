@@ -8,3 +8,26 @@ spring:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/auth/**
+            - id: user-service
+              uri: lb://user-service
+              predicates:
+                - Path=/users/**
+            - id: training-service
+              uri: lb://training-service
+              predicates:
+                - Path=/trainings/**
+            - id: enrollment-service
+              uri: lb://enrollment-service
+              predicates:
+                - Path=/enrollments/**
+
+jwt:
+  secret: ${JWT_SECRET:development-only-secret-change-me-please-use-env-var-32-bytes-minimum}

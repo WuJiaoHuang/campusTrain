@@ -6,9 +6,6 @@ import lombok.Data;
 @Data
 public class EnrollmentCreateDTO {
 
-    @NotNull(message = "用户ID不能为空")
-    private Long userId;
-
     @NotNull(message = "培训ID不能为空")
     private Long trainingId;
 }
