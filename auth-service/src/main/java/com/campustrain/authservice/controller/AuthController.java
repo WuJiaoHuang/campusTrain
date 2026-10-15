@@ -35,6 +35,7 @@ public class AuthController {
         return Result.success(authService.login(dto));
     }
 
+
     @Operation(summary = "解析Token")
     @GetMapping("/token-info")
     public Result<TokenInfoVO> tokenInfo(@RequestHeader(value = "Authorization", required = false) String authorization) {
