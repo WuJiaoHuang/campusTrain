@@ -3,6 +3,7 @@ package com.campustrain.userservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.campustrain.userservice.context.TraceIdContext;
 import com.campustrain.userservice.dto.UserCreateDTO;
 import com.campustrain.userservice.dto.UserPageQueryDTO;
 import com.campustrain.userservice.dto.UserUpdateDTO;
@@ -58,7 +59,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public UserVO getUserDetail(Long id) {
-        return convertToVO(getExistingUser(id));
+        User user = getExistingUser(id);
+        log.info("user detail queried, traceId={}, userId={}", TraceIdContext.get(), id);
+        return convertToVO(user);
     }
 
     @Override

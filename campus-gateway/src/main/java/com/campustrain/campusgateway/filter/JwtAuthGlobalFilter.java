@@ -37,7 +37,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-        String traceId = resolveTraceId(request.getHeaders().getFirst(TRACE_ID_HEADER));
+        String traceId = UUID.randomUUID().toString().replace("-", "");
         String path = request.getURI().getPath();
         String targetService = resolveTargetService(path);
 
@@ -157,12 +157,6 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
             return null;
         }
         return Long.valueOf(String.valueOf(value));
-    }
-
-    private String resolveTraceId(String requestedTraceId) {
-        return StringUtils.hasText(requestedTraceId)
-                ? requestedTraceId
-                : UUID.randomUUID().toString().replace("-", "");
     }
 
     private String resolveTargetService(String path) {

@@ -3,6 +3,7 @@ package com.campustrain.trainingservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
 import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
@@ -76,6 +77,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     @Override
     public TrainingVO getTrainingDetail(Long id) {
         Training training = getExistingTraining(id);
+        log.info("training detail queried, traceId={}, trainingId={}", TraceIdContext.get(), id);
         return convertToVO(training);
     }
 
