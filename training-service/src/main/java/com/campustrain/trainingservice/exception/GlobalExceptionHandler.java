@@ -1,8 +1,10 @@
 package com.campustrain.trainingservice.exception;
 
 import com.campustrain.trainingservice.common.Result;
+import com.campustrain.trainingservice.context.TraceIdContext;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,6 +15,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(TrainingFaultException.class)
+    public ResponseEntity<Result<Void>> handleTrainingFault(TrainingFaultException e) {
+        log.warn("training fault injection, traceId={}, resource=training-detail", TraceIdContext.get(), e);
+        return ResponseEntity.status(500).body(Result.fail(500, e.getMessage()));
+    }
 
     //如果发生BusinessException,请调用下面这个方法
     @ExceptionHandler(BusinessException.class)

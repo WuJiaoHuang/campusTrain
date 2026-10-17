@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.config.TrainingFeatureProperties;
+import com.campustrain.trainingservice.config.TrainingFaultProperties;
 import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
@@ -14,6 +15,7 @@ import com.campustrain.trainingservice.entity.Course;
 import com.campustrain.trainingservice.entity.Lesson;
 import com.campustrain.trainingservice.entity.Training;
 import com.campustrain.trainingservice.exception.BusinessException;
+import com.campustrain.trainingservice.exception.TrainingFaultException;
 import com.campustrain.trainingservice.mapper.ChapterMapper;
 import com.campustrain.trainingservice.mapper.CourseMapper;
 import com.campustrain.trainingservice.mapper.LessonMapper;
@@ -45,6 +47,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     private final ChapterMapper chapterMapper;
     private final LessonMapper lessonMapper;
     private final TrainingFeatureProperties trainingFeatureProperties;
+    private final TrainingFaultProperties trainingFaultProperties;
     private final TrainingInstanceInfo trainingInstanceInfo;
 
     @Override
@@ -84,6 +87,22 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
 
     @Override
     public TrainingVO getTrainingDetail(Long id) {
+        if (trainingFaultProperties.isDelayEnabled()) {
+            long delayMs = Math.max(0, trainingFaultProperties.getDelayMs());
+            log.warn("Stage10 delay injection, traceId={}, trainingId={}, instance={}, delayMs={}",
+                    TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId(), delayMs);
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TrainingFaultException("Stage10 故障注入延迟被中断");
+            }
+        }
+        if (trainingFaultProperties.isExceptionEnabled()) {
+            log.warn("Stage10 exception injection, traceId={}, trainingId={}, instance={}",
+                    TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
+            throw new TrainingFaultException("Stage10 故障注入：培训详情异常");
+        }
         Training training = getExistingTraining(id);
         log.info("training detail queried, traceId={}, trainingId={}, instance={}",
                 TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());

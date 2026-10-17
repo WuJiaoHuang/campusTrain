@@ -5,3 +5,7 @@ springdoc:
 campustrain:
   training:
     allow-create: true
+    fault:
+      delay-enabled: false
+      delay-ms: 1500
+      exception-enabled: false

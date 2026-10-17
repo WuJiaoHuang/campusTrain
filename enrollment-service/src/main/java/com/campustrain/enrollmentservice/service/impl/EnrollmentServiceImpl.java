@@ -113,6 +113,9 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
             throw new BusinessException(503, "用户服务暂时不可用");
         }
 
+        if (result != null && Integer.valueOf(503).equals(result.getCode())) {
+            throw new BusinessException(503, "用户服务暂时不可用");
+        }
         if (result == null || result.getCode() == null || result.getCode() != SUCCESS_CODE || result.getData() == null) {
             log.warn("remote user query returned failure, traceId={}, userId={}, code={}, message={}",
                     UserContext.getTraceId(),
@@ -147,6 +150,9 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
             throw new BusinessException(503, "培训服务暂时不可用");
         }
 
+        if (result != null && Integer.valueOf(503).equals(result.getCode())) {
+            throw new BusinessException(503, "培训服务暂时不可用");
+        }
         if (result == null || result.getCode() == null || result.getCode() != SUCCESS_CODE || result.getData() == null) {
             log.warn("remote training query returned failure, traceId={}, trainingId={}, code={}, message={}",
                     UserContext.getTraceId(),

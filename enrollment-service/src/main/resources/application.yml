@@ -12,6 +12,10 @@ spring:
       - "nacos:enrollment-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
 
   cloud:
+    sentinel:
+      eager: true
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:192.168.10.102:8858}
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
@@ -24,3 +28,7 @@ spring:
     url: jdbc:mysql://192.168.10.102:3306/campus_enrollment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:123}
+
+feign:
+  sentinel:
+    enabled: true

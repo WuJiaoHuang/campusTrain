@@ -12,6 +12,27 @@ spring:
       - "nacos:training-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
 
   cloud:
+    sentinel:
+      eager: true
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:192.168.10.102:8858}
+      datasource:
+        flow:
+          nacos:
+            server-addr: 192.168.10.102:8848
+            namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+            group-id: CAMPUS_TRAIN
+            data-id: training-service-sentinel-flow-${CAMPUS_ENV:dev}.json
+            data-type: json
+            rule-type: flow
+        degrade:
+          nacos:
+            server-addr: 192.168.10.102:8848
+            namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+            group-id: CAMPUS_TRAIN
+            data-id: training-service-sentinel-degrade-${CAMPUS_ENV:dev}.json
+            data-type: json
+            rule-type: degrade
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848

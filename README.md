@@ -290,3 +290,38 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 ### 下线与恢复
 
 停止 8085 对应的进程，在 Nacos 确认该实例下线或不健康后，再重复 Gateway 和 Feign 请求，应由其余健康实例处理。重新运行 8085 的 JAR 命令，确认它重新注册为健康实例后再多次请求，应能再次观察到 8085。实例列表与 LoadBalancer 缓存更新可能有短暂延迟，停止后不要把瞬时请求结果当作最终状态。
+
+## Stage 10：Sentinel 限流、熔断与降级
+
+限流限制进入资源的请求量；熔断在调用持续慢或异常时暂时阻断请求，并在窗口后探测恢复；降级是失败时的受控响应。服务雪崩指下游故障导致上游资源耗尽并逐层传播。Feign fallback 是失败时的受控响应，绝不是伪造正常结果：依赖失败返回 503 和空数据，报名校验中止，不写入报名表。
+
+### 配置和运行
+
+使用 Spring Cloud Alibaba Sentinel 2025.1.0.0（Sentinel 1.8.9）。启动 Nacos 并发布 Stage 8 的配置后，更新 `config/nacos/training-service-dev.yaml`；默认 `campustrain.training.fault.delay-enabled=false`、`delay-ms=1500`、`exception-enabled=false`。开关支持 Nacos 动态刷新，只影响培训详情，实验结束必须关闭。发布下面两个 JSON，namespace 为 `campustrain-dev`，group 为 `CAMPUS_TRAIN`：
+
+| DataId | 文件 | 规则 |
+| --- | --- | --- |
+| `training-service-sentinel-flow-dev.json` | `config/nacos/training-service-sentinel-flow-dev.json` | `training-detail` 单实例 5 QPS，快速失败 |
+| `training-service-sentinel-degrade-dev.json` | `config/nacos/training-service-sentinel-degrade-dev.json` | 慢调用比例及异常比例 |
+
+两个 Degrade Rule 使用 10 秒统计窗口、最少 5 次请求、熔断 5 秒；慢调用 RT 超过 500ms 且比例超过 0.5，或异常比例超过 0.5 时熔断。Flow Rule 和 Degrade Rule 分别由 Nacos 独立数据源加载。规则作用于每个实例本地 Sentinel runtime，并非集群总 QPS；Nacos 只提供共同规则来源。
+
+下载与应用相同版本的 [Sentinel Dashboard 1.8.9](https://github.com/alibaba/Sentinel/releases)，在 Dashboard 主机运行 `java -Dserver.port=8858 -jar sentinel-dashboard-1.8.9.jar`，访问 `http://192.168.10.102:8858`（默认账号密码通常为 `sentinel/sentinel`，部署时请修改）。应用默认连接该地址，可用 `SENTINEL_DASHBOARD` 环境变量覆盖；需保证 Dashboard 与各应用的 Sentinel transport 端口双向可达。Dashboard 负责监控和管理，不代理业务请求；直接在 Dashboard 修改的临时规则不自动写回 Nacos，持久规则应修改对应 Nacos DataId。
+
+按 Stage 9 启动各服务以及需要的 8082/8085/8086 实例。首次启动前务必发布 JSON，否则没有对应规则。以下实验直接请求 8082，使所有请求落在同一实例；Gateway 多实例负载均衡会分散流量。可传 `-BaseUrl http://localhost:8080 -Token $token` 使用 Gateway，Token 不写入脚本。选择数据库中真实存在的培训 ID，下面以 90001 为例。
+
+### 限流、熔断与恢复
+
+```powershell
+.\scripts\stage10\flow-limit.ps1 -TrainingId 90001
+.\scripts\stage10\slow-circuit.ps1 -TrainingId 90001
+.\scripts\stage10\exception-circuit.ps1 -TrainingId 90001
+```
+
+1. 两个故障开关关闭时运行 flow-limit，预期出现 HTTP 429、`code=429`、`请求过于频繁，请稍后再试`；降低请求速率后恢复 HTTP 200。
+2. 将 Nacos `training-service-dev.yaml` 中 `delay-enabled` 改为 `true` 并发布，确认所有目标实例已刷新，再运行 slow-circuit。先出现慢请求，随后出现 HTTP 503、`code=503`、`培训服务暂时不可用，请稍后重试`。改回 `false`，等待 5 秒熔断窗口并发起探测请求，恢复后返回正常详情。日志包含 traceId、trainingId、实例和延迟。
+3. 确认延迟关闭、统计窗口已清空，将 `exception-enabled` 改为 `true` 并发布，运行 exception-circuit。注入请求返回 HTTP 500 和 `Stage10 故障注入：培训详情异常`，达到阈值后返回上述 503。改回 `false`，等待窗口后发送探测请求，应自动恢复。普通培训不存在仍沿用现有业务异常响应，不计作注入异常。
+
+### Feign 故障与恢复
+
+使用启用的 STUDENT 和尚未报名的培训 ID，记录 `campus_enrollment.enrollment` 对应 user_id/training_id 的行数。停止所有 training 实例，等待 Nacos 摘除和 LoadBalancer 缓存更新，通过 Gateway 提交 `POST /enrollments`，请求体仅 `{"trainingId":90001}`：预期 HTTP 503、`培训服务暂时不可用`，行数不变。重启 training 并等待健康注册，重新调用应恢复原有报名校验；只有所有真实校验通过才可能写入。类似地停止 user-service 应返回 HTTP 503、`用户服务暂时不可用`，且不落库。培训限流或熔断导致 Feign 失败时也返回受控 503，不返回假培训信息。运行实验时避免对真实用户和真实培训产生意外报名。
