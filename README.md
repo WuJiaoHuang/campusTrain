@@ -226,7 +226,7 @@ Namespace 用于环境隔离，group 用于项目/配置分组，Data ID 标识�
 
 ### 配置来源与敏感信息
 
-本地保留应用名、端口、Nacos 连接与导入信息、Gateway 路由、数据库地址和数据库选择，以及 JWT 的环境变量占位符。数据库仍分别使用 `campus_user`、`campus_training`、`campus_enrollment`；用户名通过 `MYSQL_USERNAME`（默认 `root`）提供，密码通过 `MYSQL_PASSWORD` 提供，默认空字符串。`.env.example` 仅是示例，Spring Boot 不会自动加载它；启动服务前应在进程环境中设置实际密码。不要将实际密码、生产 JWT Secret 或其他凭据提交到 Git 或发布到示例配置。
+本地保留应用名、端口、Nacos 连接与导入信息、Gateway 路由、数据库地址和数据库选择，以及 JWT 的环境变量占位符。数据库仍分别使用 `campus_user`、`campus_training`、`campus_enrollment`；用户名通过 `MYSQL_USERNAME` 提供，密码通过 `MYSQL_PASSWORD` 提供，未设置时默认使用 `root` / `123`。该默认值仅供当前本地开发，生产环境必须通过环境变量覆盖，不能将真实生产密码、生产 JWT Secret 或其他凭据提交到 Git 或发布到示例配置。`.env.example` 仅是开发示例，Spring Boot 不会自动加载它。
 
 Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时使用仅供开发的相同默认值；生产部署必须给两个服务提供一致且足够强的真实 Secret。不要把空字符串作为生产 Secret。
 
@@ -236,7 +236,7 @@ Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时�
 
 `TrainingFeatureProperties` 使用 `@ConfigurationProperties` 和 `@RefreshScope`，`TrainingServiceImpl` 在创建培训前检查 `campustrain.training.allow-create`；它不影响其他 CRUD。导入地址包含 `refreshEnabled=true`，Nacos 配置变更会触发刷新，无需重新打包或重启。
 
-1. 启动 Nacos，创建并发布上述六份 dev 配置；为服务进程设置数据库用户名、密码以及需要的 JWT Secret，然后启动五个服务。
+1. 启动 Nacos，创建并发布上述六份 dev 配置；本地可使用默认数据库凭据，按需设置环境变量和 JWT Secret，然后启动五个服务。
 2. 确认 `training-service-dev.yaml` 中 `allow-create: true`，向 training-service 的 `POST /trainings` 发送合法请求，确认创建成功。
 3. 在 Nacos 的 `campustrain-dev / CAMPUS_TRAIN / training-service-dev.yaml` 将其改为 `false` 并发布；等待配置刷新后再次请求，确认返回 `当前已关闭培训创建功能`。
 4. 改回 `true` 并发布；不重启服务再次请求，确认恢复创建。注意不要用更高优先级的环境变量或命令行参数固定该属性。
