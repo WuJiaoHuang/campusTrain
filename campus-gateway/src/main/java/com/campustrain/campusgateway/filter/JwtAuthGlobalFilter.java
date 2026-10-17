@@ -39,8 +39,9 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String traceId = UUID.randomUUID().toString().replace("-", "");
         String path = request.getURI().getPath();
+        //根据当前请求路径path,判断这个请求最终要转发到哪个微服务
         String targetService = resolveTargetService(path);
-
+        //拿到一个可修改版本的Builder
         ServerHttpRequest.Builder requestBuilder = request.mutate();
         requestBuilder.headers(headers -> {
             headers.remove(USER_ID_HEADER);
@@ -91,6 +92,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
             );
             return forward(exchange, requestBuilder, chain, traceId, userId, path, targetService);
         } catch (JwtException | IllegalArgumentException e) {
+            //如果jwt本身签名错误，过期或者格式错误，解析时抛异常
             return unauthorized(exchange, traceId, path, targetService, e.getClass().getSimpleName());
         }
     }

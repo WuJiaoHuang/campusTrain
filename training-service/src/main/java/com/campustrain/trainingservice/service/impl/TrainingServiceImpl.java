@@ -3,6 +3,7 @@ package com.campustrain.trainingservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.campustrain.trainingservice.config.TrainingFeatureProperties;
 import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
@@ -42,10 +43,15 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     private final CourseMapper courseMapper;
     private final ChapterMapper chapterMapper;
     private final LessonMapper lessonMapper;
+    private final TrainingFeatureProperties trainingFeatureProperties;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long createTraining(TrainingCreateDTO dto) {
+        if (!trainingFeatureProperties.isAllowCreate()) {
+            log.warn("training creation disabled by dynamic config, traceId={}", TraceIdContext.get());
+            throw new BusinessException("当前已关闭培训创建功能");
+        }
         validateTimeRange(dto.getEnrollStartTime(), dto.getEnrollEndTime(), dto.getStartTime(), dto.getEndTime());
 
         LocalDateTime now = LocalDateTime.now();

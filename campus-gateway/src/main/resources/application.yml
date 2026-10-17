@@ -4,10 +4,17 @@ server:
 spring:
   application:
     name: campus-gateway
+  config:
+    import:
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:campus-gateway-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
   cloud:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+      config:
+        server-addr: 192.168.10.102:8848
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
     gateway:
       server:
         webflux:

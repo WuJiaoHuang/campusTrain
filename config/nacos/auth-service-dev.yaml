@@ -1,0 +1,3 @@
+springdoc:
+  packages-to-scan: com.campustrain.authservice.controller
+  paths-to-match: /auth/**

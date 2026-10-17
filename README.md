@@ -197,6 +197,46 @@ Client
 
 `POST /auth/login` 与 `GET /actuator/health` 不需要 Token。其他 Gateway 业务请求必须携带 `Authorization: Bearer <token>`；Gateway 使用与 auth-service 相同的 `JWT_SECRET` 和 JJWT 配置校验签名及有效期。
 
-客户端传入的 `X-User-Id`、`X-User-Role`、`X-Username` 与 `X-Trace-Id` 不可信。Gateway 会先移除身份 Header，再以 JWT Claims 生成真实身份 Header；TraceId 则接管客户端已有值或生成新的 UUID。enrollment-service 的 Servlet Filter 将可信 Header 写入 ThreadLocal `UserContext`，并在 `finally` 中清理，避免线程复用污染。
+客户端传入的 `X-User-Id`、`X-User-Role`、`X-Username` 与 `X-Trace-Id` 不可信。Gateway 会先移除身份 Header，再以 JWT Claims 生成真实身份 Header；TraceId 由 Gateway 为每个请求生成新的 UUID，覆盖客户端值。enrollment-service 的 Servlet Filter 将可信 Header 写入 ThreadLocal `UserContext`，并在 `finally` 中清理，避免线程复用污染。
 
 阶段 7 后 `POST /enrollments` 的请求体只包含 `trainingId`，不再接收 `userId`。报名服务仍会通过 Feign 查询 user-service 做最终用户状态和角色校验。
+
+## 阶段 8：Nacos 配置中心
+
+Nacos Discovery 提供服务注册与发现，Nacos Config 提供配置加载和变更通知；两者使用同一 Nacos 地址，但命名空间可分别设置。五个服务均使用 `spring-cloud-starter-alibaba-nacos-config`，通过本地 `application.yml` 的 `spring.config.import` 加载远程配置，不使用 `bootstrap.yml`、`shared-configs` 或 `extension-configs`。
+
+启动流程：本地配置先提供应用名、端口、Nacos 地址、Config namespace 和导入列表；随后从 Nacos 导入共享配置和该服务的独立配置，并注册 Discovery。当前 Config 使用 `campustrain-dev` namespace，Discovery 仍使用原有 `public` namespace 和 `DEFAULT_GROUP`，不会切换已有注册环境。
+
+### 配置清单
+
+以下六个文件均是可直接复制到 Nacos 的完整 YAML；类型为 `yaml`，namespace ID 为 `campustrain-dev`，group 均为 `CAMPUS_TRAIN`：
+
+| 配置 | namespace | group | Data ID | 用途 |
+| --- | --- | --- | --- | --- |
+| [公共配置](config/nacos/campustrain-common-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `campustrain-common-dev.yaml` | Knife4j 开关、健康详情展示策略 |
+| [Gateway](config/nacos/campus-gateway-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `campus-gateway-dev.yaml` | 应用信息 |
+| [User](config/nacos/user-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `user-service-dev.yaml` | OpenAPI 扫描范围 |
+| [Training](config/nacos/training-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `training-service-dev.yaml` | OpenAPI 扫描范围、创建开关 |
+| [Enrollment](config/nacos/enrollment-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `enrollment-service-dev.yaml` | OpenAPI 扫描范围 |
+| [Auth](config/nacos/auth-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `auth-service-dev.yaml` | OpenAPI 扫描范围 |
+
+Namespace 用于环境隔离，group 用于项目/配置分组，Data ID 标识具体配置文件。dev 默认使用上表；test/prod 分别规划独立 namespace，由部署环境设置实际的 `NACOS_CONFIG_NAMESPACE`，并设置 `CAMPUS_ENV=test` 或 `prod`，相应 Data ID 使用 `*-test.yaml` 或 `*-prod.yaml`。test/prod 配置需要在各自 namespace 单独创建，代码没有硬编码生产 namespace ID。切换 Config namespace 不会自动切换 Discovery namespace；生产部署应另行配置 Discovery 的环境隔离。
+
+首次部署时，先在 Nacos 创建目标 namespace，再按上表创建六个配置，内容取自对应文件。本项目使用非 optional 的 Nacos Config 导入；不要将示例文件放在项目内就误认为已发布。若 Nacos 启用了认证，还需在启动环境中配置相应 Nacos 认证参数。
+
+### 配置来源与敏感信息
+
+本地保留应用名、端口、Nacos 连接与导入信息、Gateway 路由、数据库地址和数据库选择，以及 JWT 的环境变量占位符。数据库仍分别使用 `campus_user`、`campus_training`、`campus_enrollment`；用户名通过 `MYSQL_USERNAME`（默认 `root`）提供，密码通过 `MYSQL_PASSWORD` 提供，默认空字符串。`.env.example` 仅是示例，Spring Boot 不会自动加载它；启动服务前应在进程环境中设置实际密码。不要将实际密码、生产 JWT Secret 或其他凭据提交到 Git 或发布到示例配置。
+
+Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时使用仅供开发的相同默认值；生产部署必须给两个服务提供一致且足够强的真实 Secret。不要把空字符串作为生产 Secret。
+
+对同名属性，当前 Config Data 导入顺序为本地 `application.yml`、Nacos 公共配置、Nacos 服务独立配置，后者覆盖前者；操作系统环境变量、Java 系统属性和命令行参数的优先级高于这些 Config Data。`MYSQL_PASSWORD`、`JWT_SECRET` 是本地占位符引用的环境变量；直接提供对应 Spring 属性的高优先级来源也会覆盖配置。部署环境的属性覆盖可能使 Nacos 动态变更看起来不生效。详细规则参见 [Spring Boot 外部配置](https://docs.spring.io/spring-boot/reference/features/external-config.html) 与 [Spring Cloud Alibaba Nacos Config](https://github.com/alibaba/spring-cloud-alibaba/blob/2025.1.x/spring-cloud-alibaba-examples/nacos-example/readme-zh.md)。
+
+### 动态开关验收
+
+`TrainingFeatureProperties` 使用 `@ConfigurationProperties` 和 `@RefreshScope`，`TrainingServiceImpl` 在创建培训前检查 `campustrain.training.allow-create`；它不影响其他 CRUD。导入地址包含 `refreshEnabled=true`，Nacos 配置变更会触发刷新，无需重新打包或重启。
+
+1. 启动 Nacos，创建并发布上述六份 dev 配置；为服务进程设置数据库用户名、密码以及需要的 JWT Secret，然后启动五个服务。
+2. 确认 `training-service-dev.yaml` 中 `allow-create: true`，向 training-service 的 `POST /trainings` 发送合法请求，确认创建成功。
+3. 在 Nacos 的 `campustrain-dev / CAMPUS_TRAIN / training-service-dev.yaml` 将其改为 `false` 并发布；等待配置刷新后再次请求，确认返回 `当前已关闭培训创建功能`。
+4. 改回 `true` 并发布；不重启服务再次请求，确认恢复创建。注意不要用更高优先级的环境变量或命令行参数固定该属性。

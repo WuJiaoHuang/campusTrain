@@ -1,0 +1,3 @@
+springdoc:
+  packages-to-scan: com.campustrain.enrollmentservice.controller
+  paths-to-match: /enrollments/**

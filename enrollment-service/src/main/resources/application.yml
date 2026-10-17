@@ -6,20 +6,21 @@ spring:
   application:
     name: enrollment-service
 
+  config:
+    import:
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:enrollment-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+
   cloud:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+      config:
+        server-addr: 192.168.10.102:8848
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://192.168.10.102:3306/campus_enrollment?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123
-
-knife4j:
-  enable: true
-
-springdoc:
-  packages-to-scan: com.campustrain.enrollmentservice.controller
-  paths-to-match: /enrollments/**
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}

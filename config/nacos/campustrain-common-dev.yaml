@@ -1,0 +1,7 @@
+knife4j:
+  enable: true
+
+management:
+  endpoint:
+    health:
+      show-details: never

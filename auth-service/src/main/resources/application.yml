@@ -5,24 +5,25 @@ spring:
   application:
     name: auth-service
 
+  config:
+    import:
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:auth-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+
   cloud:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+      config:
+        server-addr: 192.168.10.102:8848
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://192.168.10.102:3306/campus_user?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}
 
 jwt:
   secret: ${JWT_SECRET:development-only-secret-change-me-please-use-env-var-32-bytes-minimum}
   expiration: ${JWT_EXPIRATION:7200000}
-
-knife4j:
-  enable: true
-
-springdoc:
-  packages-to-scan: com.campustrain.authservice.controller
-  paths-to-match: /auth/**

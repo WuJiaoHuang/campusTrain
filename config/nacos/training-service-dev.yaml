@@ -1,0 +1,7 @@
+springdoc:
+  packages-to-scan: com.campustrain.trainingservice.controller
+  paths-to-match: /trainings/**,/courses/**,/chapters/**,/lessons/**
+
+campustrain:
+  training:
+    allow-create: true

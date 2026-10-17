@@ -6,20 +6,21 @@ spring:
   application:
     name: training-service
 
+  config:
+    import:
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:training-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+
   cloud:
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
+      config:
+        server-addr: 192.168.10.102:8848
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://192.168.10.102:3306/campus_training?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123
-
-knife4j:
-  enable: true
-
-springdoc:
-  packages-to-scan: com.campustrain.trainingservice.controller
-  paths-to-match: /trainings/**,/courses/**,/chapters/**,/lessons/**
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:}

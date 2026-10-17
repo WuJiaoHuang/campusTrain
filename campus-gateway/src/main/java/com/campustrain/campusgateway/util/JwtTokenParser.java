@@ -22,7 +22,7 @@ public class JwtTokenParser {
                 .parseSignedClaims(token)
                 .getPayload();
     }
-
+    //拿到验签用的密钥
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
