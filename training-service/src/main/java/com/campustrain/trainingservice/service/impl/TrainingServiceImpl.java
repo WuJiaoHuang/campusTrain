@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.config.TrainingFeatureProperties;
+import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
@@ -44,6 +45,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     private final ChapterMapper chapterMapper;
     private final LessonMapper lessonMapper;
     private final TrainingFeatureProperties trainingFeatureProperties;
+    private final TrainingInstanceInfo trainingInstanceInfo;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -83,7 +85,8 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     @Override
     public TrainingVO getTrainingDetail(Long id) {
         Training training = getExistingTraining(id);
-        log.info("training detail queried, traceId={}, trainingId={}", TraceIdContext.get(), id);
+        log.info("training detail queried, traceId={}, trainingId={}, instance={}",
+                TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
         return convertToVO(training);
     }
 

@@ -2,6 +2,7 @@ package com.campustrain.trainingservice.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.campustrain.trainingservice.common.Result;
+import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
 import com.campustrain.trainingservice.dto.TrainingPageQueryDTO;
 import com.campustrain.trainingservice.dto.TrainingStatusDTO;
@@ -9,6 +10,7 @@ import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
 import com.campustrain.trainingservice.service.TrainingService;
 import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
+import com.campustrain.trainingservice.vo.TrainingInstanceVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrainingController {
 
     private final TrainingService trainingService;
+    private final TrainingInstanceInfo trainingInstanceInfo;
+
+    @Operation(summary = "查询当前培训服务实例")
+    @GetMapping("/instance")
+    public Result<TrainingInstanceVO> getInstance() {
+        return Result.success(trainingInstanceInfo.current());
+    }
 
     @Operation(summary = "创建培训")
     @PostMapping

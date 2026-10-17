@@ -240,3 +240,53 @@ Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时�
 2. 确认 `training-service-dev.yaml` 中 `allow-create: true`，向 training-service 的 `POST /trainings` 发送合法请求，确认创建成功。
 3. 在 Nacos 的 `campustrain-dev / CAMPUS_TRAIN / training-service-dev.yaml` 将其改为 `false` 并发布；等待配置刷新后再次请求，确认返回 `当前已关闭培训创建功能`。
 4. 改回 `true` 并发布；不重启服务再次请求，确认恢复创建。注意不要用更高优先级的环境变量或命令行参数固定该属性。
+
+## 阶段 9：Spring Cloud LoadBalancer 与多实例
+
+`training-service` 是一个 Service，不同端口启动的进程是该 Service 下的不同 Instance。Nacos 负责注册、发现并提供健康实例列表；Spring Cloud LoadBalancer 从列表中选择实例，不是 Nacos 将每个 HTTP 请求轮询到实例。Gateway 通过 `lb://training-service`，Enrollment 的 `TrainingClient` 通过 `@FeignClient(name = "training-service")` 使用 LoadBalancer；未引入自定义算法或固定实例地址。
+
+```text
+Client -> Gateway -> lb://training-service -> Nacos 实例列表 -> LoadBalancer -> training instance
+Client -> Gateway -> enrollment-service -> TrainingClient -> Nacos 实例列表 -> LoadBalancer -> training instance
+```
+
+`GET /trainings/instance` 返回统一 `Result`，其中 `data` 包含应用名、实际监听端口和 `应用名:端口` 实例标识。通过 Gateway 访问仍需 JWT；该标识用于本机多端口实验，并非跨主机全局唯一标识。培训详情日志同时包含 `traceId`、`trainingId` 和实例标识。
+
+### 启动与发现
+
+1. 启动 Nacos，并按阶段 8 发布公共配置和 `training-service-dev.yaml`；启动 user、auth、enrollment、Gateway。三个 training 实例读取同一组 Nacos Config，使用同一个 `campus_training` 数据库。
+2. 执行 `mvn clean package -DskipTests`，在三个终端分别运行同一个可执行 JAR：
+
+```powershell
+java -jar training-service/target/training-service-0.0.1-SNAPSHOT.jar --server.port=8082
+java -jar training-service/target/training-service-0.0.1-SNAPSHOT.jar --server.port=8085
+java -jar training-service/target/training-service-0.0.1-SNAPSHOT.jar --server.port=8086
+```
+
+3. 在 Nacos Discovery 的 `public / DEFAULT_GROUP` 查看 `training-service`，应有三个健康实例。端口参数覆盖本地默认的 8082，服务名不变；若端口已被占用，先停止原实例。
+
+### Gateway 与 Feign 分发
+
+在 PowerShell 中登录已初始化的开发学生账号，再多次查询实例信息：
+
+```powershell
+$login = Invoke-RestMethod -Method Post http://localhost:8080/auth/login -ContentType 'application/json' -Body '{"username":"student01","password":"123456"}'
+$headers = @{ Authorization = "Bearer $($login.data.token)" }
+1..12 | ForEach-Object { (Invoke-RestMethod http://localhost:8080/trainings/instance -Headers $headers).data }
+```
+
+连续请求应观察到多个健康实例参与处理，不保证固定顺序。实际端口和实例标识由响应提供，不需要开放 JWT 白名单。
+
+Feign 验证可用一个新建、保持草稿状态的培训：
+
+```powershell
+$draft = Invoke-RestMethod -Method Post http://localhost:8080/trainings -Headers $headers -ContentType 'application/json' -Body '{"title":"Stage9 Feign 测试草稿","teacherId":1,"capacity":10}'
+$body = @{ trainingId = $draft.data } | ConvertTo-Json
+1..12 | ForEach-Object { try { Invoke-RestMethod -Method Post http://localhost:8080/enrollments -Headers $headers -ContentType 'application/json' -Body $body } catch { $_.ErrorDetails.Message } }
+```
+
+创建开关需为 `true`，账号需为启用的 STUDENT。草稿每次都会经 Feign 查询培训，再因不在报名状态被业务校验拒绝，不会产生报名记录；这避免了成功报名后的重复报名预检查。查看三个 training 终端的 `training detail queried` 日志，应能看到相同培训 ID 和多个实例标识；TraceId 可关联 Gateway 和 enrollment 日志。
+
+### 下线与恢复
+
+停止 8085 对应的进程，在 Nacos 确认该实例下线或不健康后，再重复 Gateway 和 Feign 请求，应由其余健康实例处理。重新运行 8085 的 JAR 命令，确认它重新注册为健康实例后再多次请求，应能再次观察到 8085。实例列表与 LoadBalancer 缓存更新可能有短暂延迟，停止后不要把瞬时请求结果当作最终状态。
