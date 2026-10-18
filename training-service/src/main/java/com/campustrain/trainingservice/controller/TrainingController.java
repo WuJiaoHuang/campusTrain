@@ -1,9 +1,7 @@
 package com.campustrain.trainingservice.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.alibaba.csp.sentinel.Entry;
-import com.alibaba.csp.sentinel.SphU;
-import com.alibaba.csp.sentinel.Tracer;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.campustrain.trainingservice.common.Result;
@@ -60,19 +58,10 @@ public class TrainingController {
 
     @Operation(summary = "查询培训详情")
     @GetMapping("/{id}")
+    @SentinelResource(value = "training-detail", blockHandler = "handleTrainingDetailBlock",
+            exceptionsToTrace = RuntimeException.class, exceptionsToIgnore = BusinessException.class)
     public ResponseEntity<Result<TrainingVO>> getTrainingDetail(@Parameter(description = "培训ID") @PathVariable("id") Long id) {
-        try (Entry entry = SphU.entry("training-detail")) {
-            try {
-                return ResponseEntity.ok(Result.success(trainingService.getTrainingDetail(id)));
-            } catch (BusinessException e) {
-                throw e;
-            } catch (RuntimeException e) {
-                Tracer.trace(e);
-                throw e;
-            }
-        } catch (BlockException e) {
-            return handleTrainingDetailBlock(id, e);
-        }
+        return ResponseEntity.ok(Result.success(trainingService.getTrainingDetail(id)));
     }
 
     public ResponseEntity<Result<TrainingVO>> handleTrainingDetailBlock(Long id, BlockException e) {
