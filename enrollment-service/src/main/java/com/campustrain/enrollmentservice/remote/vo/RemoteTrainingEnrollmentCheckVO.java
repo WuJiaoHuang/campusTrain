@@ -4,19 +4,11 @@ import java.time.LocalDateTime;
 import lombok.Data;
 
 @Data
-public class RemoteTrainingVO {
-
-    private Long id;
-
-    private String title;
-
-    private Integer capacity;
-
-    private Integer enrolledCount;
-
+public class RemoteTrainingEnrollmentCheckVO {
+    private Long trainingId;
     private Integer status;
-
+    private Integer capacity;
+    private Integer enrolledCount;
     private LocalDateTime enrollStartTime;
-
     private LocalDateTime enrollEndTime;
 }

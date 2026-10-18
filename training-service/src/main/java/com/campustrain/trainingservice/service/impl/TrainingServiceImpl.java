@@ -26,6 +26,7 @@ import com.campustrain.trainingservice.vo.CourseCatalogVO;
 import com.campustrain.trainingservice.vo.LessonCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
+import com.campustrain.trainingservice.vo.TrainingEnrollmentCheckVO;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -107,6 +108,21 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         log.info("training detail queried, traceId={}, trainingId={}, instance={}",
                 TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
         return convertToVO(training);
+    }
+
+    @Override
+    public TrainingEnrollmentCheckVO getEnrollmentCheck(Long id) {
+        Training training = getOne(new LambdaQueryWrapper<Training>()
+                .select(Training::getId, Training::getStatus, Training::getCapacity, Training::getEnrolledCount,
+                        Training::getEnrollStartTime, Training::getEnrollEndTime)
+                .eq(Training::getId, id));
+        if (training == null) {
+            throw new BusinessException("培训不存在");
+        }
+        log.info("training enrollment check, traceId={}, trainingId={}, instance={}",
+                TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
+        return new TrainingEnrollmentCheckVO(training.getId(), training.getStatus(), training.getCapacity(),
+                training.getEnrolledCount(), training.getEnrollStartTime(), training.getEnrollEndTime());
     }
 
     @Override

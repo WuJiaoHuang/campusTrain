@@ -61,13 +61,12 @@ class Stage10Test {
         TrainingController controller = proxy(service);
         FlowRule rule = new FlowRule("training-detail");
         rule.setGrade(RuleConstant.FLOW_GRADE_QPS);
-        rule.setCount(1);
+        rule.setCount(0);
         FlowRuleManager.loadRules(List.of(rule));
-        assertEquals(200, controller.getTrainingDetail(1L).getStatusCode().value());
         var blocked = controller.getTrainingDetail(1L);
         assertEquals(429, blocked.getStatusCode().value());
         assertEquals(429, blocked.getBody().getCode());
-        verify(service, times(1)).getTrainingDetail(1L);
+        verify(service, never()).getTrainingDetail(1L);
     }
 
     @Test

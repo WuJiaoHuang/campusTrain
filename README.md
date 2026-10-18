@@ -285,7 +285,7 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 1..12 | ForEach-Object { try { Invoke-RestMethod -Method Post http://localhost:8080/enrollments -Headers $headers -ContentType 'application/json' -Body $body } catch { $_.ErrorDetails.Message } }
 ```
 
-创建开关需为 `true`，账号需为启用的 STUDENT。草稿每次都会经 Feign 查询培训，再因不在报名状态被业务校验拒绝，不会产生报名记录；这避免了成功报名后的重复报名预检查。查看三个 training 终端的 `training detail queried` 日志，应能看到相同培训 ID 和多个实例标识；TraceId 可关联 Gateway 和 enrollment 日志。
+创建开关需为 `true`，账号需为启用的 STUDENT。草稿每次都会经 Feign 查询培训，再因不在报名状态被业务校验拒绝，不会产生报名记录；这避免了成功报名后的重复报名预检查。查看三个 training 终端的 `training enrollment check` 日志，应能看到相同培训 ID 和多个实例标识；TraceId 可关联 Gateway 和 enrollment 日志。
 
 ### 下线与恢复
 
@@ -324,4 +324,20 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 
 ### Feign 故障与恢复
 
-使用启用的 STUDENT 和尚未报名的培训 ID，记录 `campus_enrollment.enrollment` 对应 user_id/training_id 的行数。停止所有 training 实例，等待 Nacos 摘除和 LoadBalancer 缓存更新，通过 Gateway 提交 `POST /enrollments`，请求体仅 `{"trainingId":90001}`：预期 HTTP 503、`培训服务暂时不可用`，行数不变。重启 training 并等待健康注册，重新调用应恢复原有报名校验；只有所有真实校验通过才可能写入。类似地停止 user-service 应返回 HTTP 503、`用户服务暂时不可用`，且不落库。培训限流或熔断导致 Feign 失败时也返回受控 503，不返回假培训信息。运行实验时避免对真实用户和真实培训产生意外报名。
+使用启用的 STUDENT 和尚未报名的培训 ID，记录 `campus_enrollment.enrollment` 对应 user_id/training_id 的行数。停止所有 training 实例，等待 Nacos 摘除和 LoadBalancer 缓存更新，通过 Gateway 提交 `POST /enrollments`，请求体仅 `{"trainingId":90001}`：预期 HTTP 503、`培训服务暂时不可用`，行数不变。重启 training 并等待健康注册，重新调用应恢复原有报名校验；只有所有真实校验通过才可能写入。类似地停止 user-service 应返回 HTTP 503、`用户服务暂时不可用`，且不落库。报名内部培训校验限流导致 Feign 失败时也返回受控 503，不返回假培训信息；普通详情限流和熔断不应影响独立的内部校验资源。运行实验时避免对真实用户和真实培训产生意外报名。
+
+### Stage 10 三层流量治理与基准
+
+报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /trainings/{id}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/trainings/{id}/enrollment-check` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
+
+Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则。Dashboard 只观察，规则以 Nacos 为准。默认示例 5/6/3/2 仅用于测试 Block，**不是生产建议或最终阈值，BENCHMARK_PENDING**。本地规则均按实例执行，Gateway 2 QPS 是每个 Gateway 实例的入口额度；Gateway 有多个实例时必须单独实测总体入口。三台 training 的集群吞吐不等于单机额度简单乘三。
+
+执行基准前发布以上 DataId，逐项记录 topology，并在受控环境暂时清空对应规则或设置足够高的测试值，先测稳定区间和拐点；在最高稳定区间内留约 20%~30% 余量，再回写每个资源的每实例规则并复测。测试计划、拓扑和待填写表见 [docs/stage10](docs/stage10/benchmark-plan.md)。报名压测必须使用专用未报名 STUDENT 和保持草稿状态的培训；脚本预检状态并断言 HTTP 400，压测前后核对 enrollment 表行数。不要在普通业务环境中直接施压。Stage20 再补充 CPU/JVM/连接池可观测性。
+
+命令行 JMeter 5.6.3 示例（先根据实际拓扑和草稿 ID 替换参数）：
+
+```powershell
+.\scripts\stage10\jmeter\run.ps1 -Resource training-detail -Topology A -Access direct -GatewayInstances 1 -EnrollmentInstances 1 -TrainingInstances 1 -UserInstances 1 -MysqlInstances 1 -NacosInstances 1 -DashboardRunning $false -Port 8082 -TrainingId 90002 -Threads 20 -Duration 60 -Qps 10
+```
+
+JTL、HTML 报告和拓扑 JSON 输出在 `scripts/stage10/jmeter/results/`，不提交令牌或压测原始数据。其他资源、Gateway token、异常恢复和对照实验见压测计划。

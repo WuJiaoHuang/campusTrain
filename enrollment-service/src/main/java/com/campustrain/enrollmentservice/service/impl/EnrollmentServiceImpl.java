@@ -10,7 +10,7 @@ import com.campustrain.enrollmentservice.entity.Enrollment;
 import com.campustrain.enrollmentservice.exception.BusinessException;
 import com.campustrain.enrollmentservice.mapper.EnrollmentMapper;
 import com.campustrain.enrollmentservice.remote.RemoteResult;
-import com.campustrain.enrollmentservice.remote.vo.RemoteTrainingVO;
+import com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO;
 import com.campustrain.enrollmentservice.remote.vo.RemoteUserVO;
 import com.campustrain.enrollmentservice.service.EnrollmentService;
 import feign.FeignException;
@@ -48,7 +48,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         RemoteUserVO user = getRemoteUser(userId);
         validateUser(user);
 
-        RemoteTrainingVO training = getRemoteTraining(dto.getTrainingId());
+        RemoteTrainingEnrollmentCheckVO training = getRemoteTraining(dto.getTrainingId());
         validateTraining(training);
 
         LocalDateTime now = LocalDateTime.now();
@@ -136,8 +136,8 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         }
     }
 
-    private RemoteTrainingVO getRemoteTraining(Long trainingId) {
-        RemoteResult<RemoteTrainingVO> result;
+    private RemoteTrainingEnrollmentCheckVO getRemoteTraining(Long trainingId) {
+        RemoteResult<RemoteTrainingEnrollmentCheckVO> result;
         try {
             result = trainingClient.getTrainingById(trainingId);
         } catch (FeignException e) {
@@ -164,7 +164,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         return result.getData();
     }
 
-    private void validateTraining(RemoteTrainingVO training) {
+    private void validateTraining(RemoteTrainingEnrollmentCheckVO training) {
         if (!Integer.valueOf(ENABLED_STATUS).equals(training.getStatus())) {
             throw new BusinessException("当前培训不在报名状态");
         }

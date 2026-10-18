@@ -8,12 +8,15 @@ import com.campustrain.trainingservice.dto.TrainingUpdateDTO;
 import com.campustrain.trainingservice.entity.Training;
 import com.campustrain.trainingservice.vo.TrainingCatalogVO;
 import com.campustrain.trainingservice.vo.TrainingVO;
+import com.campustrain.trainingservice.vo.TrainingEnrollmentCheckVO;
 
 public interface TrainingService extends IService<Training> {
 
     Long createTraining(TrainingCreateDTO dto);
 
     TrainingVO getTrainingDetail(Long id);
+
+    TrainingEnrollmentCheckVO getEnrollmentCheck(Long id);
 
     void updateTraining(TrainingUpdateDTO dto);
 

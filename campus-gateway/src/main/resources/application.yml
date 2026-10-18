@@ -9,6 +9,21 @@ spring:
       - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
       - "nacos:campus-gateway-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
   cloud:
+    sentinel:
+      eager: true
+      filter:
+        enabled: false
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:192.168.10.102:8858}
+      datasource:
+        gateway-flow:
+          nacos:
+            server-addr: 192.168.10.102:8848
+            namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+            group-id: CAMPUS_TRAIN
+            data-id: campus-gateway-sentinel-flow-${CAMPUS_ENV:dev}.json
+            data-type: json
+            rule-type: gw-flow
     nacos:
       discovery:
         server-addr: 192.168.10.102:8848
