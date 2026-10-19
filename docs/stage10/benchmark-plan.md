@@ -1,6 +1,6 @@
 # Stage 10 基准与治理验证
 
-状态：BENCHMARK_PENDING。任何负载测试须在用户授权的隔离环境进行，先确认数据、拓扑、当前 Nacos 配置和回滚方案。两个故障开关默认关闭；每个实验后恢复。JMeter 5.6.3 CLI 可用，JMeter 不随仓库安装。
+状态：已完成（2026-10-19）。实测数据见 [benchmark-results.md](benchmark-results.md)，最终阈值见 [sentinel-thresholds.md](sentinel-thresholds.md)，实际拓扑见 [topology.md](topology.md)。本文件保留方法学；Topology C 未测试。任何负载测试须在用户授权的隔离环境进行，先确认数据、拓扑、当前 Nacos 配置和回滚方案。两个故障开关默认关闭；每个实验后恢复。JMeter 5.6.3 CLI 可用，JMeter 不随仓库安装。
 
 ## 数据安全
 
@@ -28,4 +28,4 @@ $common = @{ Topology='A'; GatewayInstances=1; EnrollmentInstances=1; TrainingIn
 4. 拓扑 B 使用三个 training 实例，经 Gateway + LoadBalancer 测详情和完整报名链，记录集群总吞吐、各实例 `training enrollment check` / `training detail queried` 日志分布、P95/P99 和错误率。内部端点不经 Gateway 暴露，单独直连每实例测试。C 仅在报名端确有瓶颈时使用。
 5. 测试慢调用、异常比例时仅更改 training-service-dev.yaml 的故障开关，按 README 关闭并等待窗口后验证恢复。停全部 training 或 user，等待发现和缓存更新，验证 Feign 503、无落库，再恢复服务并确认链路恢复。
 
-不要将演示阈值当最终值。完成后将具体环境、原始 JTL/HTML 存入受控位置，汇总至 `benchmark-results.md` 和 `sentinel-thresholds.md`；不要提交 token 或个人数据。
+演示阈值已由实测替代：最终值 800/750/160/150 已回写 Nacos，依据和原始统计见 `benchmark-results.md` 与 `sentinel-thresholds.md`。原始 JTL/HTML 保存在 `scripts/stage10/jmeter/results/` 受控位置；不要提交 token 或个人数据。Topology C 与 Gateway 多实例入口预算仍需后续单独实测。

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][ValidateSet('training-detail','training-enrollment-check','enrollment-create','gateway-enrollment')][string]$Resource,
     [Parameter(Mandatory=$true)][string]$Topology,
     [Parameter(Mandatory=$true)][ValidateSet('direct','gateway')][string]$Access,

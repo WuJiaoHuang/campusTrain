@@ -30,7 +30,8 @@ public class InternalTrainingController {
 
     public ResponseEntity<Result<TrainingEnrollmentCheckVO>> blocked(Long id, BlockException e) {
         log.warn("Sentinel blocked, traceId={}, resource=training-enrollment-check, trainingId={}, blockType={}",
-                TraceIdContext.get(), id, e.getClass().getSimpleName(), e);
+                TraceIdContext.get(), id, e.getClass().getSimpleName());
+        log.debug("Sentinel block detail, resource=training-enrollment-check, trainingId={}", id, e);
         return e instanceof FlowException
                 ? ResponseEntity.status(429).body(Result.fail(429, "请求过于频繁，请稍后再试"))
                 : ResponseEntity.status(503).body(Result.fail(503, "培训服务暂时不可用，请稍后重试"));

@@ -36,7 +36,8 @@ public class EnrollmentController {
 
     public ResponseEntity<Result<Long>> blocked(EnrollmentCreateDTO dto, BlockException e) {
         log.warn("Sentinel blocked, traceId={}, resource=enrollment-create, userId={}, trainingId={}, blockType={}",
-                UserContext.getTraceId(), UserContext.getUserId(), dto.getTrainingId(), e.getClass().getSimpleName(), e);
+                UserContext.getTraceId(), UserContext.getUserId(), dto.getTrainingId(), e.getClass().getSimpleName());
+        log.debug("Sentinel block detail, resource=enrollment-create, trainingId={}", dto.getTrainingId(), e);
         return e instanceof FlowException
                 ? ResponseEntity.status(429).body(Result.fail(429, "报名请求过于频繁，请稍后再试"))
                 : ResponseEntity.status(503).body(Result.fail(503, "报名服务暂时不可用，请稍后重试"));

@@ -301,8 +301,10 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 
 | DataId | 文件 | 规则 |
 | --- | --- | --- |
-| `training-service-sentinel-flow-dev.json` | `config/nacos/training-service-sentinel-flow-dev.json` | `training-detail` 单实例 5 QPS，快速失败 |
+| `training-service-sentinel-flow-dev.json` | `config/nacos/training-service-sentinel-flow-dev.json` | `training-detail` 每实例 800 QPS、`training-enrollment-check` 每实例 750 QPS，快速失败 |
 | `training-service-sentinel-degrade-dev.json` | `config/nacos/training-service-sentinel-degrade-dev.json` | 慢调用比例及异常比例 |
+| `enrollment-service-sentinel-flow-dev.json` | `config/nacos/enrollment-service-sentinel-flow-dev.json` | `enrollment-create` 每实例 160 QPS |
+| `campus-gateway-sentinel-flow-dev.json` | `config/nacos/campus-gateway-sentinel-flow-dev.json` | Gateway route `enrollment-service` 每 Gateway 实例 150 QPS |
 
 两个 Degrade Rule 使用 10 秒统计窗口、最少 5 次请求、熔断 5 秒；慢调用 RT 超过 500ms 且比例超过 0.5，或异常比例超过 0.5 时熔断。Flow Rule 和 Degrade Rule 分别由 Nacos 独立数据源加载。规则作用于每个实例本地 Sentinel runtime，并非集群总 QPS；Nacos 只提供共同规则来源。
 
@@ -330,9 +332,9 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 
 报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /trainings/{id}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/trainings/{id}/enrollment-check` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
 
-Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则。Dashboard 只观察，规则以 Nacos 为准。默认示例 5/6/3/2 仅用于测试 Block，**不是生产建议或最终阈值，BENCHMARK_PENDING**。本地规则均按实例执行，Gateway 2 QPS 是每个 Gateway 实例的入口额度；Gateway 有多个实例时必须单独实测总体入口。三台 training 的集群吞吐不等于单机额度简单乘三。
+Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则。Dashboard 只观察，规则以 Nacos 为准。最终阈值已实测并回写：`training-detail` 800、`training-enrollment-check` 750（均为每个 training JVM 实例），`enrollment-create` 160（每个 enrollment 实例），Gateway 路由 `enrollment-service` 150（每个 Gateway 实例）。这些值来自单机实验，不是生产承诺；详情见 [benchmark-results.md](docs/stage10/benchmark-results.md) 和 [sentinel-thresholds.md](docs/stage10/sentinel-thresholds.md)。Gateway 只有 1 个实例时 150 才是该拓扑的入口总预算；多 Gateway 必须另测。三台 training 的集群峰值实测 1,266 QPS，仅为单实例直连峰值的 1.09 倍，不能把额度简单乘三。
 
-执行基准前发布以上 DataId，逐项记录 topology，并在受控环境暂时清空对应规则或设置足够高的测试值，先测稳定区间和拐点；在最高稳定区间内留约 20%~30% 余量，再回写每个资源的每实例规则并复测。测试计划、拓扑和待填写表见 [docs/stage10](docs/stage10/benchmark-plan.md)。报名压测必须使用专用未报名 STUDENT 和保持草稿状态的培训；脚本预检状态并断言 HTTP 400，压测前后核对 enrollment 表行数。不要在普通业务环境中直接施压。Stage20 再补充 CPU/JVM/连接池可观测性。
+执行基准前发布以上 DataId，逐项记录 topology，并在受控环境暂时清空对应规则或设置足够高的测试值，先测稳定区间和拐点；在最高稳定区间内留约 20%~30% 余量，再回写每个资源的每实例规则并复测。测试计划、实测拓扑和结果见 [docs/stage10](docs/stage10/benchmark-plan.md)。报名压测必须使用专用未报名 STUDENT 和保持草稿状态的培训；脚本预检状态并断言 HTTP 400，压测前后核对 enrollment 表行数。不要在普通业务环境中直接施压。Stage20 再补充 CPU/JVM/连接池可观测性。
 
 命令行 JMeter 5.6.3 示例（先根据实际拓扑和草稿 ID 替换参数）：
 

@@ -66,7 +66,8 @@ public class TrainingController {
 
     public ResponseEntity<Result<TrainingVO>> handleTrainingDetailBlock(Long id, BlockException e) {
         log.warn("Sentinel blocked request, traceId={}, resource=training-detail, trainingId={}, exception={}",
-                TraceIdContext.get(), id, e.getClass().getSimpleName(), e);
+                TraceIdContext.get(), id, e.getClass().getSimpleName());
+        log.debug("Sentinel block detail, resource=training-detail, trainingId={}", id, e);
         if (e instanceof FlowException) {
             return ResponseEntity.status(429).body(Result.fail(429, "请求过于频繁，请稍后再试"));
         }
