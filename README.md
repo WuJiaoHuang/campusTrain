@@ -228,9 +228,13 @@ Namespace 用于环境隔离，group 用于项目/配置分组，Data ID 标识�
 
 本地保留应用名、端口、Nacos 连接与导入信息、Gateway 路由、数据库地址和数据库选择，以及 JWT 的环境变量占位符。数据库仍分别使用 `campus_user`、`campus_training`、`campus_enrollment`；用户名通过 `MYSQL_USERNAME` 提供，密码通过 `MYSQL_PASSWORD` 提供，未设置时默认使用 `root` / `123`。该默认值仅供当前本地开发，生产环境必须通过环境变量覆盖，不能将真实生产密码、生产 JWT Secret 或其他凭据提交到 Git 或发布到示例配置。`.env.example` 仅是开发示例，Spring Boot 不会自动加载它。
 
+本地开发可以在项目根目录创建 `.env`，参考 `.env.example` 一次性填写 `MYSQL_USERNAME`、`MYSQL_PASSWORD`、`JWT_SECRET`、`OSS_ACCESS_KEY_ID` 和 `OSS_ACCESS_KEY_SECRET`。五个服务会自动导入该文件，`.env` 已被 Git 忽略，切勿强制添加或把凭据写入 `.env.example`。从项目根目录或各服务模块目录启动均可找到根目录的 `.env`；若模块目录也有 `.env`，模块目录的值优先。其他工作目录启动时应显式配置工作目录或使用系统环境变量。`.env` 是未加密的本机文件，应限制本机访问权限；不用于生产凭据管理。空 OSS 密钥不影响服务启动，但无法使用 OSS 功能。
+
+`CAMPUS_ENV` 和 `NACOS_CONFIG_NAMESPACE` 用于选择启动时的 Nacos 配置，导入路径在读取 `.env` 之前解析。需要切换环境时，必须在启动进程前通过操作系统环境变量或 JVM 系统属性设置，不能依赖放入 `.env`。
+
 Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时使用仅供开发的相同默认值；生产部署必须给两个服务提供一致且足够强的真实 Secret。不要把空字符串作为生产 Secret。
 
-对同名属性，当前 Config Data 导入顺序为本地 `application.yml`、Nacos 公共配置、Nacos 服务独立配置，后者覆盖前者；操作系统环境变量、Java 系统属性和命令行参数的优先级高于这些 Config Data。`MYSQL_PASSWORD`、`JWT_SECRET` 是本地占位符引用的环境变量；直接提供对应 Spring 属性的高优先级来源也会覆盖配置。部署环境的属性覆盖可能使 Nacos 动态变更看起来不生效。详细规则参见 [Spring Boot 外部配置](https://docs.spring.io/spring-boot/reference/features/external-config.html) 与 [Spring Cloud Alibaba Nacos Config](https://github.com/alibaba/spring-cloud-alibaba/blob/2025.1.x/spring-cloud-alibaba-examples/nacos-example/readme-zh.md)。
+对同名属性，当前 Config Data 导入顺序为本地 `application.yml`、父目录 `.env`、当前目录 `.env`、Nacos 公共配置、Nacos 服务独立配置，后者覆盖前者；操作系统环境变量、Java 系统属性和命令行参数的优先级高于这些 Config Data。`MYSQL_PASSWORD`、`JWT_SECRET` 等作为占位符键从本地文件或环境中读取；直接提供对应 Spring 属性的高优先级来源也会覆盖配置。部署环境的属性覆盖可能使 Nacos 动态变更看起来不生效。详细规则参见 [Spring Boot 外部配置](https://docs.spring.io/spring-boot/reference/features/external-config.html) 与 [Spring Cloud Alibaba Nacos Config](https://github.com/alibaba/spring-cloud-alibaba/blob/2025.1.x/spring-cloud-alibaba-examples/nacos-example/readme-zh.md)。
 
 ### 动态开关验收
 
@@ -346,4 +350,4 @@ JTL、HTML 报告和拓扑 JSON 输出在 `scripts/stage10/jmeter/results/`，�
 
 # Stage 11：OSS 私有视频
 
-视频由客户端使用短期签名 URL 直接上传 OSS，training-service 只负责签名、对象校验和课时元数据；播放时动态签发 GET URL。Bucket 必须为 Private。数据库迁移 `training-service/sql/stage11-oss.sql` 需检查字段后手动执行，SQL 文件不会自动运行。OSS 凭据只通过环境变量提供，不写入仓库。详细流程、事务边界和孤儿对象风险见 [Stage 11 文档](docs/stage11/stage11-oss.md)。
+视频由客户端使用短期签名 URL 直接上传 OSS，training-service 只负责签名、对象校验和课时元数据；播放时动态签发 GET URL。Bucket 必须为 Private。数据库迁移 `training-service/sql/stage11-oss.sql` 需检查字段后手动执行，SQL 文件不会自动运行。OSS 凭据可存于被 Git 忽略的本地 `.env`，生产环境使用安全的外部配置，不写入仓库。详细流程、事务边界和孤儿对象风险见 [Stage 11 文档](docs/stage11/stage11-oss.md)。
