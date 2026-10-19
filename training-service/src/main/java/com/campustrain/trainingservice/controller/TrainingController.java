@@ -56,6 +56,8 @@ public class TrainingController {
         return Result.success(trainingService.createTraining(dto));
     }
 
+
+
     @Operation(summary = "查询培训详情")
     @GetMapping("/{id}")
     @SentinelResource(value = "training-detail", blockHandler = "handleTrainingDetailBlock",
