@@ -320,6 +320,8 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         vo.setLessonType(lesson.getLessonType());
         vo.setSort(lesson.getSort());
         vo.setVideoObjectKey(lesson.getVideoObjectKey());
+        vo.setVideoSize(lesson.getVideoSize());
+        vo.setVideoContentType(lesson.getVideoContentType());
         vo.setVideoDuration(lesson.getVideoDuration());
         return vo;
     }

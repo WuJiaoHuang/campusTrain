@@ -168,7 +168,11 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         if ("/users".equals(path) || path.startsWith("/users/")) {
             return "user-service";
         }
-        if ("/trainings".equals(path) || path.startsWith("/trainings/")) {
+        if ("/trainings".equals(path) || path.startsWith("/trainings/")
+                || "/courses".equals(path) || path.startsWith("/courses/")
+                || "/chapters".equals(path) || path.startsWith("/chapters/")
+                || "/lessons".equals(path) || path.startsWith("/lessons/")
+                || "/videos".equals(path) || path.startsWith("/videos/")) {
             return "training-service";
         }
         if ("/enrollments".equals(path) || path.startsWith("/enrollments/")) {

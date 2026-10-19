@@ -45,7 +45,7 @@ spring:
             - id: training-service
               uri: lb://training-service
               predicates:
-                - Path=/trainings/**
+                - Path=/trainings/**,/courses/**,/chapters/**,/lessons/**,/videos/**
             - id: enrollment-service
               uri: lb://enrollment-service
               predicates:

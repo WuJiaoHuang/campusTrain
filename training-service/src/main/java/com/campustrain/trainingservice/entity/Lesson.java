@@ -25,6 +25,10 @@ public class Lesson {
 
     private Integer videoDuration;
 
+    private Long videoSize;
+
+    private String videoContentType;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

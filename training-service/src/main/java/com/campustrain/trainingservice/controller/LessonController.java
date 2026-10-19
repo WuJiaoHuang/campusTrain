@@ -4,6 +4,8 @@ import com.campustrain.trainingservice.common.Result;
 import com.campustrain.trainingservice.dto.LessonCreateDTO;
 import com.campustrain.trainingservice.dto.LessonSortDTO;
 import com.campustrain.trainingservice.dto.LessonUpdateDTO;
+import com.campustrain.trainingservice.dto.VideoBindDTO;
+import com.campustrain.trainingservice.vo.VideoPlayVO;
 import com.campustrain.trainingservice.service.LessonService;
 import com.campustrain.trainingservice.vo.LessonVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +33,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class LessonController {
 
     private final LessonService lessonService;
+
+    @Operation(summary = "绑定课时视频")
+    @PutMapping("/{id}/video")
+    public Result<Void> bindVideo(@PathVariable("id") Long id, @Valid @RequestBody VideoBindDTO dto) {
+        lessonService.bindVideo(id, dto);
+        return Result.success();
+    }
+
+    @Operation(summary = "获取视频播放地址")
+    @GetMapping("/{id}/video/play-url")
+    public Result<VideoPlayVO> playUrl(@PathVariable("id") Long id) {
+        return Result.success(lessonService.createPlayUrl(id));
+    }
 
     @Operation(summary = "创建课时")
     @PostMapping

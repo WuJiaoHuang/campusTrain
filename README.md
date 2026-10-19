@@ -343,3 +343,7 @@ Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sen
 ```
 
 JTL、HTML 报告和拓扑 JSON 输出在 `scripts/stage10/jmeter/results/`，不提交令牌或压测原始数据。其他资源、Gateway token、异常恢复和对照实验见压测计划。
+
+# Stage 11：OSS 私有视频
+
+视频由客户端使用短期签名 URL 直接上传 OSS，training-service 只负责签名、对象校验和课时元数据；播放时动态签发 GET URL。Bucket 必须为 Private。数据库迁移 `training-service/sql/stage11-oss.sql` 需检查字段后手动执行，SQL 文件不会自动运行。OSS 凭据只通过环境变量提供，不写入仓库。详细流程、事务边界和孤儿对象风险见 [Stage 11 文档](docs/stage11/stage11-oss.md)。

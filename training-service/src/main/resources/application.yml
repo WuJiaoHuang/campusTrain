@@ -45,3 +45,14 @@ spring:
     url: jdbc:mysql://192.168.10.102:3306/campus_training?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:123}
+
+campustrain:
+  oss:
+    endpoint: ${OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}
+    region: ${OSS_REGION:cn-beijing}
+    bucket: ${OSS_BUCKET:java-ai-wujiaohuang}
+    access-key-id: ${OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    upload-expire-seconds: 900
+    play-expire-seconds: 600
+    max-video-size: 524288000

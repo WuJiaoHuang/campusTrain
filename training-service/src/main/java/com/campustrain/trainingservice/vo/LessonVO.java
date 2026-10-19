@@ -29,6 +29,12 @@ public class LessonVO {
     @Schema(description = "视频时长，单位秒")
     private Integer videoDuration;
 
+    @Schema(description = "视频大小，单位字节")
+    private Long videoSize;
+
+    @Schema(description = "视频 Content-Type")
+    private String videoContentType;
+
     @Schema(description = "创建时间")
     private LocalDateTime createTime;
 
