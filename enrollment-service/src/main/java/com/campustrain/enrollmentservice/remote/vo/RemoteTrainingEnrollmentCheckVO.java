@@ -6,6 +6,7 @@ import lombok.Data;
 @Data
 public class RemoteTrainingEnrollmentCheckVO {
     private Long trainingId;
+    private Long teacherId;
     private Integer status;
     private Integer capacity;
     private Integer enrolledCount;

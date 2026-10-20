@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 public class EnrollmentVO {
 
-    private Long id;
+    private Long enrollmentId;
 
     private Long userId;
 

@@ -351,3 +351,25 @@ JTL、HTML 报告和拓扑 JSON 输出在 `scripts/stage10/jmeter/results/`，�
 # Stage 11：OSS 私有视频
 
 视频由客户端使用短期签名 URL 直接上传 OSS，training-service 只负责签名、对象校验和课时元数据；播放时动态签发 GET URL。Bucket 必须为 Private。数据库迁移 `training-service/sql/stage11-oss.sql` 需检查字段后手动执行，SQL 文件不会自动运行。OSS 凭据可存于被 Git 忽略的本地 `.env`，生产环境使用安全的外部配置，不写入仓库。详细流程、事务边界和孤儿对象风险见 [Stage 11 文档](docs/stage11/stage11-oss.md)。
+# Stage 12：报名基础功能
+
+报名身份来自 Gateway 验证 JWT 后写入的 `UserContext`，不接受请求体里的用户 ID；服务端口及内部 `/internal/**` 接口应仅对可信服务网络开放，不能把客户端传入的身份头当作可信身份。
+
+- `POST /enrollments`：请求体 `{"trainingId":912001}`。只允许启用的学生，检查培训状态、窗口和容量；重复报名拒绝，取消后重新报名复用原记录并保留创建时间。
+- `PUT /enrollments/{enrollmentId}/cancel`：只能取消自己的已报名记录，状态改为取消，不删除。
+- `GET /enrollments/me?page=1&size=10&status=1`：我的报名分页；`status` 可省略。
+- `GET /enrollments/trainings/{trainingId}?page=1&size=10&status=1`：报名名单分页，管理员可查，教师只能查自己负责的培训；学生不可查。返回报名记录，不逐条远程查询用户。
+
+报名状态：`0=CANCELLED`、`1=ENROLLED`。用户与培训仍分别通过 Feign 访问，保留唯一约束 `uk_user_training(user_id, training_id)`。培训端使用条件 SQL 原子占用容量并重新检查状态与窗口；取消时条件减一，不能减到负数。报名本地事务提交失败时同步尝试减回；取消本地事务提交失败时同步尝试恢复计数，补偿失败记录 ERROR。
+
+这是基础一致性，不是跨服务事务：远程调用超时可能已经执行但响应丢失，无法判断是否应该补偿；补偿本身也可能失败。遇到此类告警应暂停相关操作并人工核对，Stage15 再考虑 MQ 最终一致性。历史阶段的记录可能没有维护 `enrolled_count`，上线前应先审计并由业务人员确认修正，不能假定历史数据自动一致。可用下面的只读 SQL 检查：
+
+```sql
+SELECT t.id, t.enrolled_count, COUNT(e.id) AS active_count
+FROM campus_training.training t
+LEFT JOIN campus_enrollment.enrollment e ON e.training_id = t.id AND e.status = 1
+GROUP BY t.id, t.enrolled_count
+HAVING t.enrolled_count <> COUNT(e.id);
+```
+
+测试数据文件 [stage12-test-data.sql](enrollment-service/sql/stage12-test-data.sql) 使用专用用户和培训 ID `912001` 至 `912005`，默认测试密码 `123456`，只限开发。执行前必须先核对这些 ID 与 `stage12_*` 用户名均未占用；冲突时停止，不覆盖现有数据。测试后先停止访问这些测试数据，可执行 [stage12-test-clean.sql](enrollment-service/sql/stage12-test-clean.sql) 定向清理，再重新执行数据文件。SQL 不自动执行，不使用 TRUNCATE；清理脚本不会删除存在其他用户报名的培训或仍被引用的账号。请仅在开发库执行。

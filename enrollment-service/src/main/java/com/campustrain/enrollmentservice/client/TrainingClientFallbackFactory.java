@@ -11,9 +11,15 @@ import org.springframework.stereotype.Component;
 public class TrainingClientFallbackFactory implements FallbackFactory<TrainingClient> {
     @Override
     public TrainingClient create(Throwable cause) {
-        return id -> {
-            log.error("training Feign fallback, traceId={}, trainingId={}", UserContext.getTraceId(), id, cause);
-            return RemoteResult.unavailable("培训服务暂时不可用");
+        return new TrainingClient() {
+            private <T> RemoteResult<T> unavailable(Long id) {
+                log.error("training Feign fallback, traceId={}, userId={}, trainingId={}", UserContext.getTraceId(), UserContext.getUserId(), id, cause);
+                return RemoteResult.unavailable("培训服务暂时不可用");
+            }
+            @Override public RemoteResult<com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO> getTrainingById(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> increment(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> decrement(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> restore(Long id) { return unavailable(id); }
         };
     }
 }

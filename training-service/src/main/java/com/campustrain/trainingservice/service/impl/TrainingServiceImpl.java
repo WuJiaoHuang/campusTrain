@@ -113,7 +113,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     @Override
     public TrainingEnrollmentCheckVO getEnrollmentCheck(Long id) {
         Training training = getOne(new LambdaQueryWrapper<Training>()
-                .select(Training::getId, Training::getStatus, Training::getCapacity, Training::getEnrolledCount,
+                .select(Training::getId, Training::getTeacherId, Training::getStatus, Training::getCapacity, Training::getEnrolledCount,
                         Training::getEnrollStartTime, Training::getEnrollEndTime)
                 .eq(Training::getId, id));
         if (training == null) {
@@ -121,7 +121,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         }
         log.info("training enrollment check, traceId={}, trainingId={}, instance={}",
                 TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
-        return new TrainingEnrollmentCheckVO(training.getId(), training.getStatus(), training.getCapacity(),
+        return new TrainingEnrollmentCheckVO(training.getId(), training.getTeacherId(), training.getStatus(), training.getCapacity(),
                 training.getEnrolledCount(), training.getEnrollStartTime(), training.getEnrollEndTime());
     }
 
