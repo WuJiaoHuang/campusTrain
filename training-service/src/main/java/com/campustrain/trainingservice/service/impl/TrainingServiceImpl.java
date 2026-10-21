@@ -4,6 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.config.TrainingFeatureProperties;
+import com.campustrain.trainingservice.cache.CacheInvalidationSupport;
+import com.campustrain.trainingservice.cache.CacheLookup;
+import com.campustrain.trainingservice.cache.TrainingCacheKeys;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.config.TrainingFaultProperties;
 import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.context.TraceIdContext;
@@ -50,6 +54,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     private final TrainingFeatureProperties trainingFeatureProperties;
     private final TrainingFaultProperties trainingFaultProperties;
     private final TrainingInstanceInfo trainingInstanceInfo;
+    private final TrainingCacheService trainingCacheService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -104,10 +109,15 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
                     TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
             throw new TrainingFaultException("Stage10 故障注入：培训详情异常");
         }
-        Training training = getExistingTraining(id);
+        CacheLookup<TrainingVO> cached = trainingCacheService.get(TrainingCacheKeys.detail(id), id, TrainingVO.class,
+                trainingCacheServiceDetailTtl(), () -> {
+                    Training training = getById(id);
+                    return training == null ? null : convertToVO(training);
+                });
+        if (!cached.found()) throw new BusinessException("培训不存在");
         log.info("training detail queried, traceId={}, trainingId={}, instance={}",
                 TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
-        return convertToVO(training);
+        return cached.value();
     }
 
     @Override
@@ -143,6 +153,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         training.setUpdateTime(LocalDateTime.now());
 
         updateById(training);
+        CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictDetail(training.getId()));
         log.info("training updated, trainingId={}", training.getId());
     }
 
@@ -190,6 +201,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         training.setStatus(targetStatus);
         training.setUpdateTime(LocalDateTime.now());
         updateById(training);
+        CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictDetail(training.getId()));
         log.info(
                 "training status changed, trainingId={}, oldStatus={}, newStatus={}",
                 id,
@@ -200,7 +212,15 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
 
     @Override
     public TrainingCatalogVO getTrainingCatalog(Long trainingId) {
-        Training training = getExistingTraining(trainingId);
+        CacheLookup<TrainingCatalogVO> cached = trainingCacheService.get(TrainingCacheKeys.catalog(trainingId), trainingId,
+                TrainingCatalogVO.class, trainingCacheServiceCatalogTtl(), () -> loadTrainingCatalog(trainingId));
+        if (!cached.found()) throw new BusinessException("培训不存在");
+        return cached.value();
+    }
+
+    private TrainingCatalogVO loadTrainingCatalog(Long trainingId) {
+        Training training = getById(trainingId);
+        if (training == null) return null;
         List<Course> courses = courseMapper.selectList(new LambdaQueryWrapper<Course>()
                 .eq(Course::getTrainingId, trainingId)
                 .orderByAsc(Course::getSort)
@@ -253,6 +273,14 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
                 })
                 .toList());
         return catalogVO;
+    }
+
+    private java.time.Duration trainingCacheServiceDetailTtl() {
+        return trainingCacheService.detailTtl();
+    }
+
+    private java.time.Duration trainingCacheServiceCatalogTtl() {
+        return trainingCacheService.catalogTtl();
     }
 
     private Training getExistingTraining(Long id) {

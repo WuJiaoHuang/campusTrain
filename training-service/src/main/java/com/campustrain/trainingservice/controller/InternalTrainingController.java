@@ -4,6 +4,7 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.campustrain.trainingservice.common.Result;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.service.TrainingService;
 import com.campustrain.trainingservice.mapper.TrainingMapper;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InternalTrainingController {
     private final TrainingService trainingService;
     private final TrainingMapper trainingMapper;
+    private final TrainingCacheService trainingCacheService;
 
     @GetMapping("/{id}/enrollment-check")
     @SentinelResource(value = "training-enrollment-check", blockHandler = "blocked")
@@ -42,19 +44,22 @@ public class InternalTrainingController {
 
     @PostMapping("/{id}/enrollment-count/increment")
     public Result<Void> increment(@PathVariable("id") Long id) {
-        return trainingMapper.reserveEnrollment(id) == 1 ? Result.success()
-                : Result.fail(400, "培训不可报名或名额已满");
+        if (trainingMapper.reserveEnrollment(id) != 1) return Result.fail(400, "培训不可报名或名额已满");
+        trainingCacheService.evictDetail(id);
+        return Result.success();
     }
 
     @PostMapping("/{id}/enrollment-count/decrement")
     public Result<Void> decrement(@PathVariable("id") Long id) {
-        return trainingMapper.releaseEnrollment(id) == 1 ? Result.success()
-                : Result.fail(400, "培训名额计数无法减少");
+        if (trainingMapper.releaseEnrollment(id) != 1) return Result.fail(400, "培训名额计数无法减少");
+        trainingCacheService.evictDetail(id);
+        return Result.success();
     }
 
     @PostMapping("/{id}/enrollment-count/restore")
     public Result<Void> restore(@PathVariable("id") Long id) {
-        return trainingMapper.restoreEnrollment(id) == 1 ? Result.success()
-                : Result.fail(400, "培训名额计数无法恢复");
+        if (trainingMapper.restoreEnrollment(id) != 1) return Result.fail(400, "培训名额计数无法恢复");
+        trainingCacheService.evictDetail(id);
+        return Result.success();
     }
 }

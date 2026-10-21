@@ -3,6 +3,8 @@ package com.campustrain.trainingservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.dto.LessonCreateDTO;
+import com.campustrain.trainingservice.cache.CacheInvalidationSupport;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.dto.LessonSortDTO;
 import com.campustrain.trainingservice.dto.LessonUpdateDTO;
 import com.campustrain.trainingservice.dto.VideoUploadDTO;
@@ -17,6 +19,7 @@ import com.campustrain.trainingservice.entity.Chapter;
 import com.campustrain.trainingservice.entity.Lesson;
 import com.campustrain.trainingservice.exception.BusinessException;
 import com.campustrain.trainingservice.mapper.ChapterMapper;
+import com.campustrain.trainingservice.mapper.CourseMapper;
 import com.campustrain.trainingservice.mapper.LessonMapper;
 import com.campustrain.trainingservice.service.LessonService;
 import com.campustrain.trainingservice.vo.LessonVO;
@@ -41,8 +44,10 @@ import org.springframework.util.StringUtils;
 public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> implements LessonService {
 
     private final ChapterMapper chapterMapper;
+    private final CourseMapper courseMapper;
     private final OssService ossService;
     private final OssProperties ossProperties;
+    private final TrainingCacheService trainingCacheService;
     private static final Map<String, String> VIDEO_TYPES = Map.of(
             "video/mp4", "mp4", "video/webm", "webm", "video/quicktime", "mov");
 
@@ -62,6 +67,7 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
         lesson.setUpdateTime(now);
 
         save(lesson);
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         log.info("lesson created, lessonId={}, chapterId={}, title={}", lesson.getId(), lesson.getChapterId(), lesson.getTitle());
         return lesson.getId();
     }
@@ -80,6 +86,7 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
         lesson.setUpdateTime(LocalDateTime.now());
 
         updateById(lesson);
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         log.info("lesson updated, lessonId={}", lesson.getId());
     }
 
@@ -104,6 +111,7 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
             lesson.setSort(dto.getSort());
             lesson.setUpdateTime(now);
             updateById(lesson);
+            CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         }
         log.info("lessons sorted, count={}", dtoList.size());
     }
@@ -113,6 +121,7 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
     public void deleteLesson(Long id) {
         Lesson lesson = getExistingLesson(id);
         if (!removeById(id)) throw new BusinessException("删除课时失败");
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         cleanupAfterCommit(lesson.getId(), lesson.getVideoObjectKey());
         log.info("lesson deleted, lessonId={}", lesson.getId());
     }
@@ -158,6 +167,7 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
         lesson.setVideoDuration(dto.getDuration());
         lesson.setUpdateTime(LocalDateTime.now());
         if (!updateById(lesson)) throw new BusinessException("视频绑定失败");
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         if (!dto.getObjectKey().equals(oldKey)) cleanupAfterCommit(id, oldKey);
         log.info("video bound, traceId={}, lessonId={}, objectKey={}, size={}, contentType={}", TraceIdContext.get(), id, dto.getObjectKey(), dto.getSize(), dto.getContentType());
     }
@@ -213,6 +223,13 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
             throw new BusinessException("课时不存在");
         }
         return lesson;
+    }
+
+    private void evictCatalogForChapter(Long chapterId) {
+        Chapter chapter = chapterMapper.selectById(chapterId);
+        if (chapter == null) return;
+        com.campustrain.trainingservice.entity.Course course = courseMapper.selectById(chapter.getCourseId());
+        if (course != null) trainingCacheService.evictCatalog(course.getTrainingId());
     }
 
     private LessonVO convertToVO(Lesson lesson) {

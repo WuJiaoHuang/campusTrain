@@ -3,6 +3,8 @@ package com.campustrain.trainingservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.dto.CourseCreateDTO;
+import com.campustrain.trainingservice.cache.CacheInvalidationSupport;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.dto.CourseUpdateDTO;
 import com.campustrain.trainingservice.entity.Chapter;
 import com.campustrain.trainingservice.entity.Course;
@@ -27,6 +29,7 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
 
     private final TrainingMapper trainingMapper;
     private final ChapterMapper chapterMapper;
+    private final TrainingCacheService trainingCacheService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -43,6 +46,7 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
         course.setUpdateTime(now);
 
         save(course);
+        CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictCatalog(course.getTrainingId()));
         log.info("course created, courseId={}, trainingId={}, title={}", course.getId(), course.getTrainingId(), course.getTitle());
         return course.getId();
     }
@@ -57,6 +61,7 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
         course.setUpdateTime(LocalDateTime.now());
 
         updateById(course);
+        CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictCatalog(course.getTrainingId()));
         log.info("course updated, courseId={}", course.getId());
     }
 
@@ -88,6 +93,7 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
         }
 
         removeById(id);
+        CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictCatalog(course.getTrainingId()));
         log.info("course deleted, courseId={}", course.getId());
     }
 

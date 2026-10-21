@@ -18,3 +18,10 @@ campustrain:
       delay-enabled: false
       delay-ms: 1500
       exception-enabled: false
+  cache:
+    detail-ttl: 8m
+    catalog-ttl: 8m
+    null-ttl: 45s
+    caffeine-ttl: 45s
+    caffeine-maximum-size: 1000
+    ttl-jitter: 30s

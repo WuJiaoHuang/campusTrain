@@ -3,6 +3,8 @@ package com.campustrain.trainingservice.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.trainingservice.dto.ChapterCreateDTO;
+import com.campustrain.trainingservice.cache.CacheInvalidationSupport;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.dto.ChapterSortDTO;
 import com.campustrain.trainingservice.dto.ChapterUpdateDTO;
 import com.campustrain.trainingservice.entity.Chapter;
@@ -28,6 +30,7 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
 
     private final CourseMapper courseMapper;
     private final LessonMapper lessonMapper;
+    private final TrainingCacheService trainingCacheService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -43,6 +46,7 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
         chapter.setUpdateTime(now);
 
         save(chapter);
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForCourse(chapter.getCourseId()));
         log.info("chapter created, chapterId={}, courseId={}, title={}", chapter.getId(), chapter.getCourseId(), chapter.getTitle());
         return chapter.getId();
     }
@@ -56,6 +60,7 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
         chapter.setUpdateTime(LocalDateTime.now());
 
         updateById(chapter);
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForCourse(chapter.getCourseId()));
         log.info("chapter updated, chapterId={}", chapter.getId());
     }
 
@@ -80,6 +85,7 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
             chapter.setSort(dto.getSort());
             chapter.setUpdateTime(now);
             updateById(chapter);
+            CacheInvalidationSupport.afterCommit(() -> evictCatalogForCourse(chapter.getCourseId()));
         }
         log.info("chapters sorted, count={}", dtoList.size());
     }
@@ -95,6 +101,7 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
         }
 
         removeById(id);
+        CacheInvalidationSupport.afterCommit(() -> evictCatalogForCourse(chapter.getCourseId()));
         log.info("chapter deleted, chapterId={}", chapter.getId());
     }
 
@@ -111,6 +118,11 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
             throw new BusinessException("章节不存在");
         }
         return chapter;
+    }
+
+    private void evictCatalogForCourse(Long courseId) {
+        Course course = courseMapper.selectById(courseId);
+        if (course != null) trainingCacheService.evictCatalog(course.getTrainingId());
     }
 
     private ChapterVO convertToVO(Chapter chapter) {

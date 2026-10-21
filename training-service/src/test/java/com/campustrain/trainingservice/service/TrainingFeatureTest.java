@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 import com.campustrain.trainingservice.config.TrainingFeatureProperties;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.config.TrainingFaultProperties;
 import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.dto.TrainingCreateDTO;
@@ -23,7 +24,7 @@ class TrainingFeatureTest {
         TrainingFeatureProperties properties = new TrainingFeatureProperties();
         TrainingServiceImpl service = new TrainingServiceImpl(
                 mock(CourseMapper.class), mock(ChapterMapper.class), mock(LessonMapper.class), properties,
-                new TrainingFaultProperties(), mock(TrainingInstanceInfo.class));
+                new TrainingFaultProperties(), mock(TrainingInstanceInfo.class), mock(TrainingCacheService.class));
         TrainingCreateDTO dto = new TrainingCreateDTO();
         dto.setEnrollStartTime(LocalDateTime.of(2026, 1, 2, 0, 0));
         dto.setEnrollEndTime(LocalDateTime.of(2026, 1, 1, 0, 0));

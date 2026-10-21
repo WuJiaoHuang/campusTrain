@@ -23,7 +23,9 @@ class InternalTrainingSentinelTest {
     void internalLimitDoesNotBlockDetailResource() {
         TrainingService service = mock(TrainingService.class);
         when(service.getTrainingDetail(1L)).thenReturn(new TrainingVO());
-        AspectJProxyFactory internalFactory = new AspectJProxyFactory(new InternalTrainingController(service, mock(com.campustrain.trainingservice.mapper.TrainingMapper.class)));
+        AspectJProxyFactory internalFactory = new AspectJProxyFactory(new InternalTrainingController(service,
+                mock(com.campustrain.trainingservice.mapper.TrainingMapper.class),
+                mock(com.campustrain.trainingservice.cache.TrainingCacheService.class)));
         internalFactory.addAspect(new SentinelResourceAspect());
         InternalTrainingController internal = internalFactory.getProxy();
         AspectJProxyFactory detailFactory = new AspectJProxyFactory(new TrainingController(service, mock(TrainingInstanceInfo.class)));

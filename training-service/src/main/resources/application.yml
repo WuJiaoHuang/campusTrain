@@ -48,6 +48,12 @@ spring:
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:123}
 
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.10.102}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+
 campustrain:
   oss:
     endpoint: ${OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}

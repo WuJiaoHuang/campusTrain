@@ -373,3 +373,15 @@ HAVING t.enrolled_count <> COUNT(e.id);
 ```
 
 测试数据文件 [stage12-test-data.sql](enrollment-service/sql/stage12-test-data.sql) 使用专用用户和培训 ID `912001` 至 `912005`，默认测试密码 `123456`，只限开发。执行前必须先核对这些 ID 与 `stage12_*` 用户名均未占用；冲突时停止，不覆盖现有数据。测试后先停止访问这些测试数据，可执行 [stage12-test-clean.sql](enrollment-service/sql/stage12-test-clean.sql) 定向清理，再重新执行数据文件。SQL 不自动执行，不使用 TRUNCATE；清理脚本不会删除存在其他用户报名的培训或仍被引用的账号。请仅在开发库执行。
+
+## Stage 13：Redis + Caffeine 两级缓存
+
+training-service 对 `GET /trainings/{id}` 和 `GET /trainings/{id}/catalog` 使用 Cache Aside：Caffeine L1 -> Redis L2 -> MySQL。Key 分别为 `campustrain:training:detail:{id}` 与 `campustrain:training:catalog:{id}`；空结果使用专用标记，绝不伪造 `TrainingVO`。默认 L1 TTL 为 45 秒，详情/目录 Redis TTL 为 8 分钟，空值 TTL 为 45 秒，正常 Redis TTL 再加 0 至 30 秒随机抖动。所有值可在 Nacos `training-service-dev.yaml` 的 `campustrain.cache` 调整；Redis 默认 `192.168.10.102:6379`、密码 `123456`，可由 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 覆盖。
+
+首次 miss 会回源并填充两级缓存；不存在的 ID 只在第一次回源，随后命中短 TTL 空值标记，防止穿透。同一 JVM 的同一个 miss key 使用每 key single-flight 锁，避免热点失效时多线程同时击穿 DB；不同 key 不互相串行。该锁不是分布式锁，多 training 实例之间不协调。Redis TTL 抖动与较短的独立 L1 TTL 缓解雪崩。
+
+培训更新、状态变化、报名人数增减会在本地事务提交后删除 detail 的 L1 再删 Redis；课程、章节、课时的创建、修改、删除、排序及视频绑定会按关系定位 training 后失效 catalog。Redis 读写或删除失败会记录含 traceId、trainingId、cacheKey 的日志，查询降级到 MySQL，写/删失败不影响业务结果。多实例下 Redis 删除可立即影响 L2，但其他 JVM 的 L1 最多在 Caffeine TTL 内保留旧值；Stage13 不使用 Pub/Sub、MQ 或分布式锁。
+
+开发重置入口为 [dev-reset-data.sql](sql/dev-reset-data.sql)，文件顶部标明 `DEVELOPMENT ONLY - DESTRUCTIVE RESET`，会只清空并重建 `campus_user`、`campus_training`、`campus_enrollment` 的项目业务表。账号均为密码 `123456`：`student01` 至 `student04`、`student_disabled`、`teacher01`、`teacher02`、`admin01`。数据含草稿、报名中、未开始、报名结束、满员、部分报名、零报名、进行中、已结束及两位教师的培训；目录包含多课程/章节/课时和视频、图文课时（没有虚构 OSS object key）。脚本末尾的十类检查正常均返回 0 行。
+
+Stage13 实测：2026-10-22 已实际执行重置脚本及检查；实际连接 Redis 后观察到 detail/catalog key 和约 8 分钟的 TTL 抖动，日志依次出现 `DB MISS`、重启清空 L1 后的 `L2 HIT`、随后 `L1 HIT`。手动删除 detail Redis key 并重启实例后再次出现 `DB MISS`；通过培训和课程更新确认 detail/catalog 立即失效。使用不可达 Redis 端口模拟故障时，日志记录读写失败，详情仍通过 MySQL 返回 HTTP 200。

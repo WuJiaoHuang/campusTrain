@@ -12,6 +12,8 @@ import com.campustrain.trainingservice.dto.VideoUploadDTO;
 import com.campustrain.trainingservice.entity.Lesson;
 import com.campustrain.trainingservice.exception.BusinessException;
 import com.campustrain.trainingservice.mapper.ChapterMapper;
+import com.campustrain.trainingservice.mapper.CourseMapper;
+import com.campustrain.trainingservice.cache.TrainingCacheService;
 import com.campustrain.trainingservice.service.impl.LessonServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +32,8 @@ class Stage11VideoTest {
     @BeforeEach
     void setup() {
         oss = mock(OssService.class);
-        service = spy(new LessonServiceImpl(mock(ChapterMapper.class), oss, new OssProperties()));
+        service = spy(new LessonServiceImpl(mock(ChapterMapper.class), mock(CourseMapper.class), oss,
+                new OssProperties(), mock(TrainingCacheService.class)));
         lesson = new Lesson();
         lesson.setId(1L);
         lesson.setLessonType(0);
