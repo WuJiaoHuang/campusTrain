@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.campustrain.enrollmentservice.client.TrainingClient;
 import com.campustrain.enrollmentservice.client.UserClient;
 import com.campustrain.enrollmentservice.context.UserContext;
+import com.campustrain.enrollmentservice.concurrency.EnrollmentRedisReservationService;
+import com.campustrain.enrollmentservice.concurrency.ReservationResult;
 import com.campustrain.enrollmentservice.dto.EnrollmentCreateDTO;
 import com.campustrain.enrollmentservice.entity.Enrollment;
 import com.campustrain.enrollmentservice.exception.BusinessException;
@@ -31,6 +33,7 @@ class Stage12EnrollmentTest {
     private UserClient users;
     private TrainingClient trainings;
     private PlatformTransactionManager tx;
+    private EnrollmentRedisReservationService reservations;
     private EnrollmentServiceImpl service;
     private RemoteUserVO user;
     private RemoteTrainingEnrollmentCheckVO training;
@@ -42,8 +45,9 @@ class Stage12EnrollmentTest {
         users = mock(UserClient.class);
         trainings = mock(TrainingClient.class);
         tx = mock(PlatformTransactionManager.class);
+        reservations = mock(EnrollmentRedisReservationService.class);
         when(tx.getTransaction(any())).thenAnswer(inv -> new SimpleTransactionStatus());
-        service = spy(new EnrollmentServiceImpl(users, trainings, tx));
+        service = spy(new EnrollmentServiceImpl(users, trainings, tx, reservations));
         doReturn(false).when(service).exists(any());
         doReturn(null).when(service).getOne(any(Wrapper.class));
         doReturn(true).when(service).save(any(Enrollment.class));
@@ -56,6 +60,8 @@ class Stage12EnrollmentTest {
         when(trainings.increment(anyLong())).thenReturn(ok(null));
         when(trainings.decrement(anyLong())).thenReturn(ok(null));
         when(trainings.restore(anyLong())).thenReturn(ok(null));
+        when(reservations.reserve(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
+        when(reservations.release(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
         request = new EnrollmentCreateDTO(); request.setTrainingId(2L);
         UserContext.set(1L, "STUDENT", "student", "trace");
     }
@@ -65,6 +71,7 @@ class Stage12EnrollmentTest {
     @Test void firstEnrollmentReservesThenSaves() {
         service.enroll(request);
         verify(trainings).increment(2L); verify(service).save(any(Enrollment.class));
+        verify(reservations).ensureInitialized(training); verify(reservations).reserve(2L, 1L);
         verify(tx).commit(any()); verify(trainings, never()).decrement(anyLong());
     }
 
@@ -72,6 +79,7 @@ class Stage12EnrollmentTest {
         doReturn(true).when(service).exists(any());
         assertThrows(BusinessException.class, () -> service.enroll(request));
         verifyNoInteractions(users, trainings);
+        verifyNoInteractions(reservations);
     }
 
     @Test void cancelledRecordIsReactivatedWithoutInsert() {
@@ -94,6 +102,7 @@ class Stage12EnrollmentTest {
         when(trainings.getTrainingById(2L)).thenReturn(ok(null));
         assertThrows(BusinessException.class, () -> service.enroll(request));
         verify(trainings, never()).increment(anyLong());
+        verifyNoInteractions(reservations);
     }
 
     @Test void dependencyFailureReturns503WithoutWriting() {
@@ -116,6 +125,7 @@ class Stage12EnrollmentTest {
         assertEquals(503, assertThrows(BusinessException.class, () -> service.enroll(request)).getCode());
         verify(service, never()).save(any(Enrollment.class));
         verify(trainings, never()).decrement(anyLong());
+        verify(reservations).release(2L, 1L);
     }
 
     @Test void compensationFailureDoesNotHideOriginalFailure() {
@@ -128,6 +138,7 @@ class Stage12EnrollmentTest {
     @Test void cancelAndDuplicateCancel() {
         Enrollment record = record(1); doReturn(record).when(service).getOne(any(Wrapper.class));
         service.cancel(7L); verify(trainings).decrement(2L);
+        verify(reservations).release(2L, 1L);
         record.setStatus(0); assertThrows(BusinessException.class, () -> service.cancel(7L));
         verify(trainings, times(1)).decrement(2L);
     }

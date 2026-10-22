@@ -84,3 +84,7 @@ replay_pid*
 *.jar
 *.war
 *.ear
+
+# Locally generated Stage14 JMeter raw evidence and HTML reports
+scripts/stage14/results/*
+!scripts/stage14/results/.gitkeep

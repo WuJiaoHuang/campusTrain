@@ -1,3 +1,10 @@
 springdoc:
   packages-to-scan: com.campustrain.enrollmentservice.controller
   paths-to-match: /enrollments/**
+campustrain:
+  enrollment:
+    redis:
+      host: ${REDIS_HOST:192.168.10.102}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      connect-timeout-ms: ${REDIS_CONNECT_TIMEOUT_MS:3000}

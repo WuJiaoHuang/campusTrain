@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.campustrain.enrollmentservice.client.TrainingClient;
 import com.campustrain.enrollmentservice.client.UserClient;
+import com.campustrain.enrollmentservice.concurrency.EnrollmentRedisReservationService;
+import com.campustrain.enrollmentservice.concurrency.ReservationResult;
 import com.campustrain.enrollmentservice.context.UserContext;
 import com.campustrain.enrollmentservice.dto.EnrollmentCreateDTO;
 import com.campustrain.enrollmentservice.entity.Enrollment;
@@ -41,6 +43,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     private final UserClient userClient;
     private final TrainingClient trainingClient;
     private final PlatformTransactionManager transactionManager;
+    private final EnrollmentRedisReservationService reservationService;
 
     @Override
     public Long enroll(EnrollmentCreateDTO dto) {
@@ -57,13 +60,29 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
 
         RemoteTrainingEnrollmentCheckVO training = getRemoteTraining(dto.getTrainingId());
         validateTraining(training);
+        reservationService.ensureInitialized(training);
+        ReservationResult reservation = reservationService.reserve(dto.getTrainingId(), userId);
+        if (reservation == ReservationResult.DUPLICATE) {
+            log.warn("Redis enrollment reservation rejected duplicate, traceId={}, userId={}, trainingId={}",
+                    traceId, userId, dto.getTrainingId());
+            throw new BusinessException("请勿重复报名");
+        }
+        if (reservation == ReservationResult.SOLD_OUT) {
+            log.warn("Redis enrollment reservation rejected sold out, traceId={}, userId={}, trainingId={}",
+                    traceId, userId, dto.getTrainingId());
+            throw new BusinessException("培训名额已满");
+        }
+        if (reservation != ReservationResult.SUCCESS) {
+            throw new BusinessException(503, "报名高并发控制暂时不可用，请稍后重试");
+        }
 
-        callCount(() -> trainingClient.increment(dto.getTrainingId()), dto.getTrainingId(), true);
+        AtomicBoolean countIncremented = new AtomicBoolean();
         try {
+            callCount(() -> trainingClient.increment(dto.getTrainingId()), dto.getTrainingId(), true);
+            countIncremented.set(true);
             Long id = new TransactionTemplate(transactionManager).execute(tx -> {
                 Enrollment existing = getOne(new LambdaQueryWrapper<Enrollment>()
-                        .eq(Enrollment::getUserId, userId).eq(Enrollment::getTrainingId, dto.getTrainingId())
-                        .last("FOR UPDATE"));
+                        .eq(Enrollment::getUserId, userId).eq(Enrollment::getTrainingId, dto.getTrainingId()));
                 LocalDateTime now = LocalDateTime.now();
                 if (existing != null) {
                     if (!Integer.valueOf(EnrollmentStatus.CANCELLED.getCode()).equals(existing.getStatus())) {
@@ -91,7 +110,10 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                     traceId, id, userId, dto.getTrainingId());
             return id;
         } catch (RuntimeException e) {
-            compensate(() -> trainingClient.decrement(dto.getTrainingId()), userId, dto.getTrainingId(), "release", e);
+            if (countIncremented.get()) {
+                compensate(() -> trainingClient.decrement(dto.getTrainingId()), userId, dto.getTrainingId(), "decrement", e);
+            }
+            releaseReservation(userId, dto.getTrainingId(), "enroll-rollback", e);
             if (e instanceof DuplicateKeyException) throw new BusinessException("请勿重复报名");
             throw e;
         }
@@ -101,7 +123,12 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     public void cancel(Long enrollmentId) {
         Long userId = getCurrentUserId();
         AtomicBoolean released = new AtomicBoolean();
+        AtomicBoolean redisReleased = new AtomicBoolean();
         Long[] trainingId = new Long[1];
+        Enrollment target = getOne(new LambdaQueryWrapper<Enrollment>()
+                .eq(Enrollment::getId, enrollmentId).eq(Enrollment::getUserId, userId));
+        if (target == null) throw new BusinessException("报名不存在或不属于当前用户");
+        reservationService.ensureInitialized(getRemoteTraining(target.getTrainingId()));
         try {
             new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
                 Enrollment enrollment = getOne(new LambdaQueryWrapper<Enrollment>()
@@ -121,10 +148,18 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                 if (!updated) throw new BusinessException("报名状态已变化，请重试");
                 callCount(() -> trainingClient.decrement(trainingId[0]), trainingId[0], false);
                 released.set(true);
+                ReservationResult result = reservationService.release(trainingId[0], userId);
+                if (result != ReservationResult.SUCCESS) {
+                    throw new BusinessException(503, "报名高并发控制暂时不可用，请稍后重试");
+                }
+                redisReleased.set(true);
             });
             log.info("enrollment cancelled, traceId={}, userId={}, trainingId={}, enrollmentId={}",
                     UserContext.getTraceId(), userId, trainingId[0], enrollmentId);
         } catch (RuntimeException e) {
+            if (redisReleased.get()) {
+                restoreReservation(userId, trainingId[0], e);
+            }
             if (released.get()) compensate(() -> trainingClient.restore(trainingId[0]), userId, trainingId[0], "restore", e);
             throw e;
         }
@@ -199,6 +234,32 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         } catch (Exception failure) {
             log.error("enrollment compensation failed, traceId={}, userId={}, trainingId={}, action={}",
                     UserContext.getTraceId(), userId, trainingId, action, failure);
+            original.addSuppressed(failure);
+        }
+    }
+
+    private void releaseReservation(Long userId, Long trainingId, String action, Exception original) {
+        try {
+            ReservationResult result = reservationService.release(trainingId, userId);
+            if (result != ReservationResult.SUCCESS) {
+                throw new IllegalStateException("Redis reservation release returned " + result);
+            }
+        } catch (Exception failure) {
+            log.error("Redis enrollment compensation failed, traceId={}, userId={}, trainingId={}, action={}",
+                    UserContext.getTraceId(), userId, trainingId, action, failure);
+            original.addSuppressed(failure);
+        }
+    }
+
+    private void restoreReservation(Long userId, Long trainingId, Exception original) {
+        try {
+            ReservationResult result = reservationService.reserve(trainingId, userId);
+            if (result != ReservationResult.SUCCESS) {
+                throw new IllegalStateException("Redis reservation restore returned " + result);
+            }
+        } catch (Exception failure) {
+            log.error("Redis cancellation compensation failed, traceId={}, userId={}, trainingId={}",
+                    UserContext.getTraceId(), userId, trainingId, failure);
             original.addSuppressed(failure);
         }
     }
