@@ -16,6 +16,7 @@ import com.campustrain.enrollmentservice.remote.RemoteResult;
 import com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO;
 import com.campustrain.enrollmentservice.remote.vo.RemoteUserVO;
 import com.campustrain.enrollmentservice.service.impl.EnrollmentServiceImpl;
+import com.campustrain.enrollmentservice.mq.OutboxService;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ class Stage12EnrollmentTest {
     private TrainingClient trainings;
     private PlatformTransactionManager tx;
     private EnrollmentRedisReservationService reservations;
+    private OutboxService outbox;
     private EnrollmentServiceImpl service;
     private RemoteUserVO user;
     private RemoteTrainingEnrollmentCheckVO training;
@@ -46,8 +48,9 @@ class Stage12EnrollmentTest {
         trainings = mock(TrainingClient.class);
         tx = mock(PlatformTransactionManager.class);
         reservations = mock(EnrollmentRedisReservationService.class);
+        outbox = mock(OutboxService.class);
         when(tx.getTransaction(any())).thenAnswer(inv -> new SimpleTransactionStatus());
-        service = spy(new EnrollmentServiceImpl(users, trainings, tx, reservations));
+        service = spy(new EnrollmentServiceImpl(users, trainings, tx, reservations, outbox));
         doReturn(false).when(service).exists(any());
         doReturn(null).when(service).getOne(any(Wrapper.class));
         doReturn(true).when(service).save(any(Enrollment.class));
@@ -62,6 +65,7 @@ class Stage12EnrollmentTest {
         when(trainings.restore(anyLong())).thenReturn(ok(null));
         when(reservations.reserve(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
         when(reservations.release(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
+        when(outbox.createEnrollmentSuccess(any(), any(), any(), any())).thenReturn(100L);
         request = new EnrollmentCreateDTO(); request.setTrainingId(2L);
         UserContext.set(1L, "STUDENT", "student", "trace");
     }
@@ -71,6 +75,7 @@ class Stage12EnrollmentTest {
     @Test void firstEnrollmentReservesThenSaves() {
         service.enroll(request);
         verify(trainings).increment(2L); verify(service).save(any(Enrollment.class));
+        verify(outbox).createEnrollmentSuccess(any(), eq(1L), eq(2L), eq("trace")); verify(outbox).dispatch(100L);
         verify(reservations).ensureInitialized(training); verify(reservations).reserve(2L, 1L);
         verify(tx).commit(any()); verify(trainings, never()).decrement(anyLong());
     }

@@ -15,6 +15,7 @@ import com.campustrain.enrollmentservice.entity.EnrollmentStatus;
 import com.campustrain.enrollmentservice.vo.EnrollmentVO;
 import com.campustrain.enrollmentservice.exception.BusinessException;
 import com.campustrain.enrollmentservice.mapper.EnrollmentMapper;
+import com.campustrain.enrollmentservice.mq.OutboxService;
 import com.campustrain.enrollmentservice.remote.RemoteResult;
 import com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO;
 import com.campustrain.enrollmentservice.remote.vo.RemoteUserVO;
@@ -44,6 +45,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     private final TrainingClient trainingClient;
     private final PlatformTransactionManager transactionManager;
     private final EnrollmentRedisReservationService reservationService;
+    private final OutboxService outboxService;
 
     @Override
     public Long enroll(EnrollmentCreateDTO dto) {
@@ -77,6 +79,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         }
 
         AtomicBoolean countIncremented = new AtomicBoolean();
+        Long[] outboxId = new Long[1];
         try {
             callCount(() -> trainingClient.increment(dto.getTrainingId()), dto.getTrainingId(), true);
             countIncremented.set(true);
@@ -94,6 +97,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                             .set(Enrollment::getStatus, EnrollmentStatus.ENROLLED.getCode())
                             .set(Enrollment::getEnrollTime, now).set(Enrollment::getUpdateTime, now));
                     if (!updated) throw new BusinessException("报名状态已变化，请重试");
+                    outboxId[0] = outboxService.createEnrollmentSuccess(existing.getId(), userId, dto.getTrainingId(), traceId);
                     return existing.getId();
                 }
                 Enrollment enrollment = new Enrollment();
@@ -104,8 +108,10 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                 enrollment.setCreateTime(now);
                 enrollment.setUpdateTime(now);
                 if (!save(enrollment)) throw new IllegalStateException("报名记录写入失败");
+                outboxId[0] = outboxService.createEnrollmentSuccess(enrollment.getId(), userId, dto.getTrainingId(), traceId);
                 return enrollment.getId();
             });
+            outboxService.dispatch(outboxId[0]);
             log.info("enrollment created or reactivated, traceId={}, enrollmentId={}, userId={}, trainingId={}",
                     traceId, id, userId, dto.getTrainingId());
             return id;

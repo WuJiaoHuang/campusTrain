@@ -2,6 +2,10 @@
 
 CampusTrain 是一个基于 Spring Boot、Spring Cloud Alibaba 和 MyBatis-Plus 的校园培训业务项目。
 
+## Stage15：RabbitMQ 可靠事件
+
+报名成功后，enrollment-service 在本地事务内写入 Outbox，提交后经 RabbitMQ 异步投递通知事件；失败事件由定时任务补发，消费者使用手动 ACK、三次重试、DLQ 与幂等记录处理重复投递。详细拓扑、SQL 初始化和真实验收步骤见 [Stage15 文档](docs/stage15/README.md)。
+
 ## training-service 内容结构
 
 ```text
