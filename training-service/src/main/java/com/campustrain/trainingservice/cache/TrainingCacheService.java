@@ -14,7 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-
+/*
+* 统一负责查Caffeine->查redis->查Mysql->回填缓存,以及删除缓存
+* */
 @Slf4j
 @Service
 public class TrainingCacheService {
@@ -65,6 +67,7 @@ public class TrainingCacheService {
         }
     }
 
+    //删除某个培训详情的缓存
     public void evictDetail(Long trainingId) {
         evict(TrainingCacheKeys.detail(trainingId), trainingId);
     }
@@ -77,6 +80,7 @@ public class TrainingCacheService {
         return properties.getCatalogTtl();
     }
 
+    //某个培训的课程目录缓存
     public void evictCatalog(Long trainingId) {
         evict(TrainingCacheKeys.catalog(trainingId), trainingId);
     }
