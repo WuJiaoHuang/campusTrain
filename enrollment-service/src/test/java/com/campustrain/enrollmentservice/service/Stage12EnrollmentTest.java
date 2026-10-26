@@ -75,7 +75,8 @@ class Stage12EnrollmentTest {
     @Test void firstEnrollmentReservesThenSaves() {
         service.enroll(request);
         verify(trainings).increment(2L); verify(service).save(any(Enrollment.class));
-        verify(outbox).createEnrollmentSuccess(any(), eq(1L), eq(2L), eq("trace")); verify(outbox).dispatch(100L);
+        verify(outbox).createEnrollmentSuccess(any(), eq(1L), eq(2L), eq("trace"));
+        verify(outbox, never()).dispatch(any());
         verify(reservations).ensureInitialized(training); verify(reservations).reserve(2L, 1L);
         verify(tx).commit(any()); verify(trainings, never()).decrement(anyLong());
     }

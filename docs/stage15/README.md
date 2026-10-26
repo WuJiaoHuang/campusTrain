@@ -17,7 +17,7 @@ Exchange、Queue 均为 durable；消息使用 persistent delivery mode。
 
 ## 报名事件与 Outbox
 
-Stage14 的 Redis Lua、Redisson 初始化锁、训练人数同步更新及数据库唯一约束保持不变。报名本地事务内同时写入 `enrollment` 与 `event_outbox`；提交成功后才尝试发送 `EnrollmentSuccessEvent`。发送失败不会回滚已经成功的报名：Outbox 保持 `NEW`，定时任务每 5 秒按最多 50 条重发。只有 Publisher Confirm ACK 才标记 `SENT`；NACK 和 mandatory Return 都保留 `NEW` 并记录 `retry_count` 与 `last_error`。
+Stage14 的 Redis Lua、Redisson 初始化锁、训练人数同步更新及数据库唯一约束保持不变。报名本地事务内同时写入 `enrollment` 与 `event_outbox`；发送由定时任务处理，不在报名请求线程同步连接 RabbitMQ。发送失败不会回滚已经成功的报名：Outbox 保持 `NEW`，定时任务每 5 秒按最多 50 条重发。只有 Publisher Confirm ACK 且没有 mandatory Return 才标记 `SENT`；NACK 和 mandatory Return 都保留 `NEW` 并记录 `retry_count` 与 `last_error`。
 
 这保证的是本地业务与待发送事件的一致性，不是跨 MySQL、RabbitMQ、training-service 的全局事务。进程在 MQ ACK 与更新 Outbox 状态之间崩溃时可能重复投递，因此消费者必须幂等。
 
@@ -43,9 +43,11 @@ mysql -u root -p campus_enrollment < enrollment-service/sql/stage15-consistency-
 1. 设置实际 RabbitMQ 用户名、密码和 vhost，启动 `enrollment-service`，在管理台确认四个业务/DLQ 队列被声明。
 2. 用 Stage14 的真实学生完成报名。查询 `event_outbox` 应先出现记录，收到 Confirm ACK 后为 `SENT`；`notification_record` 只产生一条，`mq_consume_record` 有对应幂等记录。
 3. 用错误 routing key 发布测试消息，验证 mandatory Return 被记录且 Outbox 不会标记 `SENT`。
-4. 发送 `eventType=STAGE15_FAIL_ALWAYS` 的学习完成测试消息。消费者三次失败后，管理台的 `campustrain.learning.completed.dlq` 应出现该消息。
+4. 发送 `eventType=STAGE15_FAIL_ONCE` 的学习完成测试消息，验证第一次失败后第二次成功；发送 `eventType=STAGE15_FAIL_ALWAYS`，消费者三次失败后，管理台的 `campustrain.learning.completed.dlq` 应出现该消息。插入 `event_type=STAGE15_UNROUTABLE` 的测试 Outbox，可验证 mandatory Return 会使记录保持 `NEW`。
 5. 对同一个 `eventId` 发布两次，副作用记录仍只有一条。
 6. 停止消费者或应用，发布 100 条测试消息，观察 ready 堆积；恢复后 ready 回到 0，检查副作用记录无重复。
 7. 暂停 RabbitMQ 后完成真实报名：报名和 Outbox `NEW` 必须存在。恢复 RabbitMQ 后等待定时任务，Outbox 变 `SENT` 并产生一次通知记录。
 
 RabbitMQ 可用性、消费者处理成功和最终副作用是三个不同阶段；“发送调用没有抛异常”本身不代表业务已经完成。
+
+2026-10-26 开发环境实测：直接调用 enrollment-service，暂停既有 RabbitMQ 容器后报名返回 HTTP 200，Outbox 为 `NEW`；恢复容器后该记录变为 `SENT`。这是直连服务的故障测试，不代表经过 Gateway 的端到端验收。此前同步发送时请求超过 45 秒未返回，已改为定时投递。测试留下的报名记录仍需按业务规则维护，不能直接删除而不处理人数和 Redis 状态。

@@ -10,9 +10,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -32,7 +30,6 @@ public class OutboxService {
     private final EventOutboxMapper outboxMapper;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
-    private final Set<String> returnedEventIds = ConcurrentHashMap.newKeySet();
 
     public OutboxService(EventOutboxMapper outboxMapper, RabbitTemplate rabbitTemplate,
                          @Qualifier("mqObjectMapper") ObjectMapper objectMapper) {
@@ -47,7 +44,7 @@ public class OutboxService {
         rabbitTemplate.setReturnsCallback(returned -> {
             Object eventId = returned.getMessage().getMessageProperties().getHeaders().get("eventId");
             if (eventId != null) {
-                markReturned(String.valueOf(eventId), returned.getReplyText());
+                log.error("MQ returned unroutable message, eventId={}, reason={}", eventId, returned.getReplyText());
             }
         });
     }
@@ -83,8 +80,9 @@ public class OutboxService {
                     log.error("MQ producer NACK, eventId={}, routingKey={}, traceId={}", outbox.getEventId(), routingKey, traceId(outbox), error);
                     return;
                 }
-                if (returnedEventIds.remove(outbox.getEventId())) {
-                    log.warn("MQ confirm ACK ignored after returned message, eventId={}, routingKey={}, traceId={}",
+                if (correlation.getReturned() != null) {
+                    markFailed(outbox.getEventId(), correlation.getReturned().getReplyText());
+                    log.error("MQ confirm ACK with returned message, eventId={}, routingKey={}, traceId={}",
                             outbox.getEventId(), routingKey, traceId(outbox));
                     return;
                 }
@@ -104,16 +102,11 @@ public class OutboxService {
         pending.forEach(item -> dispatch(item.getId()));
     }
 
-    public void markReturned(String eventId, String reason) {
-        returnedEventIds.add(eventId);
-        markFailed(eventId, reason);
-        log.error("MQ returned unroutable message, eventId={}, reason={}", eventId, reason);
-    }
-
     private Long create(String eventId, String eventType, Long aggregateId, Object event, String routingKey) {
         try {
             EventOutbox outbox = new EventOutbox();
             outbox.setEventId(eventId); outbox.setEventType(eventType); outbox.setAggregateId(aggregateId);
+            //java转换为json对象，写入payload
             outbox.setPayload(objectMapper.writeValueAsString(event)); outbox.setStatus(NEW); outbox.setRetryCount(0);
             outbox.setCreateTime(LocalDateTime.now()); outbox.setUpdateTime(LocalDateTime.now());
             if (outboxMapper.insert(outbox) != 1) throw new IllegalStateException("outbox write failed");
@@ -124,6 +117,9 @@ public class OutboxService {
     private void markSent(String eventId) { outboxMapper.update(null, new LambdaUpdateWrapper<EventOutbox>().eq(EventOutbox::getEventId, eventId).eq(EventOutbox::getStatus, NEW).set(EventOutbox::getStatus, SENT).set(EventOutbox::getUpdateTime, LocalDateTime.now())); }
     private void markFailed(String eventId, String error) { outboxMapper.update(null, new LambdaUpdateWrapper<EventOutbox>().eq(EventOutbox::getEventId, eventId).eq(EventOutbox::getStatus, NEW).setSql("retry_count = retry_count + 1").set(EventOutbox::getLastError, error == null ? "unknown" : error.substring(0, Math.min(500, error.length()))).set(EventOutbox::getUpdateTime, LocalDateTime.now())); }
     private String routingKey(String type) {
+        if ("STAGE15_UNROUTABLE".equals(type)) {
+            return "stage15.unroutable";
+        }
         return type != null && type.startsWith("LEARNING_COMPLETED") || "STAGE15_FAIL_ALWAYS".equals(type)
                 ? MqConstants.LEARNING_COMPLETED_ROUTING_KEY : MqConstants.ENROLLMENT_SUCCESS_ROUTING_KEY;
     }

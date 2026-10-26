@@ -71,6 +71,7 @@ spring.log
 .env
 .env.*
 !.env.example
+/agent.md
 
 # =========================
 # Java crash logs

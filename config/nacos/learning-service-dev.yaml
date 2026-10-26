@@ -1,0 +1,6 @@
+# Non-secret defaults; infrastructure credentials remain environment driven.
+campustrain:
+  learning:
+    complete-ratio: 0.90
+    flush-interval-ms: 5000
+    flush-batch-size: 100

@@ -11,6 +11,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -24,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class LearningCompletedConsumer {
     private static final int MAX_ATTEMPTS = 3;
+    private static final Set<String> FAILED_ONCE_EVENT_IDS = ConcurrentHashMap.newKeySet();
     private final MqConsumeRecordMapper consumeRecordMapper;
     private final LearningEventAuditMapper auditMapper;
     private final ObjectMapper objectMapper;
@@ -71,6 +74,9 @@ public class LearningCompletedConsumer {
 
     private void processOnce(LearningCompletedEvent event) {
         if ("STAGE15_FAIL_ALWAYS".equals(event.getEventType())) throw new IllegalStateException("Stage15 controlled consumer failure");
+        if ("STAGE15_FAIL_ONCE".equals(event.getEventType()) && FAILED_ONCE_EVENT_IDS.add(event.getEventId())) {
+            throw new IllegalStateException("Stage15 controlled first-attempt failure");
+        }
         if (alreadyConsumed(event.getEventId())) return;
         LocalDateTime now = LocalDateTime.now();
         MqConsumeRecord record = new MqConsumeRecord();

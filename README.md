@@ -389,3 +389,7 @@ training-service 对 `GET /trainings/{id}` 和 `GET /trainings/{id}/catalog` 使
 开发重置入口为 [dev-reset-data.sql](sql/dev-reset-data.sql)，文件顶部标明 `DEVELOPMENT ONLY - DESTRUCTIVE RESET`，会只清空并重建 `campus_user`、`campus_training`、`campus_enrollment` 的项目业务表。账号均为密码 `123456`：`student01` 至 `student04`、`student_disabled`、`teacher01`、`teacher02`、`admin01`。数据含草稿、报名中、未开始、报名结束、满员、部分报名、零报名、进行中、已结束及两位教师的培训；目录包含多课程/章节/课时和视频、图文课时（没有虚构 OSS object key）。脚本末尾的十类检查正常均返回 0 行。
 
 Stage13 实测：2026-10-22 已实际执行重置脚本及检查；实际连接 Redis 后观察到 detail/catalog key 和约 8 分钟的 TTL 抖动，日志依次出现 `DB MISS`、重启清空 L1 后的 `L2 HIT`、随后 `L1 HIT`。手动删除 detail Redis key 并重启实例后再次出现 `DB MISS`；通过培训和课程更新确认 detail/catalog 立即失效。使用不可达 Redis 端口模拟故障时，日志记录读写失败，详情仍通过 MySQL 返回 HTTP 200。
+
+## Stage16 学习服务
+
+学习服务的启动、数据库初始化、进度、Outbox 和当前验收边界见 [Stage16 文档](docs/stage16/README.md)。

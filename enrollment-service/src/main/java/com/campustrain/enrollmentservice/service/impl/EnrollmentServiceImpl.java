@@ -24,7 +24,6 @@ import feign.FeignException;
 import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -34,7 +33,6 @@ import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollment> implements EnrollmentService {
 
     private static final int SUCCESS_CODE = 200;
@@ -46,6 +44,16 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     private final PlatformTransactionManager transactionManager;
     private final EnrollmentRedisReservationService reservationService;
     private final OutboxService outboxService;
+
+    public EnrollmentServiceImpl(UserClient userClient, TrainingClient trainingClient,
+                                 PlatformTransactionManager transactionManager,
+                                 EnrollmentRedisReservationService reservationService, OutboxService outboxService) {
+        this.userClient = userClient;
+        this.trainingClient = trainingClient;
+        this.transactionManager = transactionManager;
+        this.reservationService = reservationService;
+        this.outboxService = outboxService;
+    }
 
     @Override
     public Long enroll(EnrollmentCreateDTO dto) {
@@ -79,7 +87,6 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
         }
 
         AtomicBoolean countIncremented = new AtomicBoolean();
-        Long[] outboxId = new Long[1];
         try {
             callCount(() -> trainingClient.increment(dto.getTrainingId()), dto.getTrainingId(), true);
             countIncremented.set(true);
@@ -97,7 +104,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                             .set(Enrollment::getStatus, EnrollmentStatus.ENROLLED.getCode())
                             .set(Enrollment::getEnrollTime, now).set(Enrollment::getUpdateTime, now));
                     if (!updated) throw new BusinessException("报名状态已变化，请重试");
-                    outboxId[0] = outboxService.createEnrollmentSuccess(existing.getId(), userId, dto.getTrainingId(), traceId);
+                    outboxService.createEnrollmentSuccess(existing.getId(), userId, dto.getTrainingId(), traceId);
                     return existing.getId();
                 }
                 Enrollment enrollment = new Enrollment();
@@ -108,10 +115,9 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                 enrollment.setCreateTime(now);
                 enrollment.setUpdateTime(now);
                 if (!save(enrollment)) throw new IllegalStateException("报名记录写入失败");
-                outboxId[0] = outboxService.createEnrollmentSuccess(enrollment.getId(), userId, dto.getTrainingId(), traceId);
+                outboxService.createEnrollmentSuccess(enrollment.getId(), userId, dto.getTrainingId(), traceId);
                 return enrollment.getId();
             });
-            outboxService.dispatch(outboxId[0]);
             log.info("enrollment created or reactivated, traceId={}, enrollmentId={}, userId={}, trainingId={}",
                     traceId, id, userId, dto.getTrainingId());
             return id;

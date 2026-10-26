@@ -13,7 +13,7 @@ public class EventOutbox {
     private String eventId;
     private String eventType;
     private Long aggregateId;
-    private String payload;
+    private String payload;//关联用户对象id,比如enrolleId
     private String status;
     private Integer retryCount;
     private String lastError;

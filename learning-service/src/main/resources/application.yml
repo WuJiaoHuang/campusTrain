@@ -1,0 +1,41 @@
+server:
+  port: ${LEARNING_PORT:8087}
+spring:
+  application:
+    name: learning-service
+  config:
+    import:
+      - "optional:file:../.env[.properties]"
+      - "optional:file:./.env[.properties]"
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:learning-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+      config:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:192.168.10.102}:${MYSQL_PORT:3306}/campus_learning?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.10.102}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.10.102}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+campustrain:
+  learning:
+    complete-ratio: 0.90
+    flush-interval-ms: 5000
+    flush-batch-size: 100
