@@ -1,14 +1,15 @@
-package com.campustrain.learningservice;
+package com.campustrain.learningservice.service;
 
+import com.campustrain.learningservice.client.dto.Lesson;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.sql.Timestamp;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.HashSet;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -23,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 @Service
 public class LearningProgressStore {
-    static final String DIRTY = "campustrain:learning:dirty";
+    public static final String DIRTY = "campustrain:learning:dirty";
     private final StringRedisTemplate redis;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -37,18 +38,37 @@ public class LearningProgressStore {
 
     public LearningProgressStore(StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate transaction,
                                  ObjectMapper json, @Value("${campustrain.learning.flush-batch-size:100}") int batchSize) {
-        this.redis = redis; this.jdbc = jdbc; this.transaction = transaction; this.json = json;
+        this.redis = redis;
+        this.jdbc = jdbc;
+        this.transaction = transaction;
+        this.json = json;
         this.batchSize = Math.max(1, batchSize);
     }
 
-    static String key(long userId, long lessonId) { return "campustrain:learning:progress:" + userId + ":" + lessonId; }
-    private static String member(long userId, long lessonId) { return userId + ":" + lessonId; }
-    private static <T> DefaultRedisScript<T> script(String path, Class<T> result) {
-        DefaultRedisScript<T> script = new DefaultRedisScript<>();
-        script.setLocation(new ClassPathResource(path)); script.setResultType(result); return script;
+    public static String key(long userId, long lessonId) {
+        return "campustrain:learning:progress:" + userId + ":" + lessonId;
     }
 
-    public Map<Object, Object> read(long userId, RemoteClients.Lesson lesson, String traceId) {
+    private static String member(long userId, long lessonId) {
+        return userId + ":" + lessonId;
+    }
+
+    private static <T> DefaultRedisScript<T> script(String path, Class<T> result) {
+        DefaultRedisScript<T> script = new DefaultRedisScript<>();
+        script.setLocation(new ClassPathResource(path));
+        script.setResultType(result);
+        return script;
+    }
+
+    /**
+     * 读取用户某课时的学习进度：
+     * 1. 优先从 Redis Hash 读取，存在则直接返回；
+     * 2. Redis 不存在时查询 MySQL learning_record；
+     * 3. MySQL 有记录则用持久化数据恢复 Redis；
+     * 4. MySQL 也没有则按 0 进度初始化 Redis，并标记 dirty 等待刷盘；
+     * 5. 最后返回 Redis 中完整的学习进度 Hash。
+     */
+    public Map<Object, Object> read(long userId, Lesson lesson, String traceId) {
         String key = key(userId, lesson.lessonId());
         Map<Object, Object> values = redis.opsForHash().entries(key);
         if (!values.isEmpty()) return values;
@@ -66,7 +86,11 @@ public class LearningProgressStore {
         return redis.opsForHash().entries(key);
     }
 
-    public Map<Object, Object> peek(long userId, RemoteClients.Lesson lesson, String traceId) {
+    /**
+     * 只读查看学习进度：优先读 Redis，缓存缺失且 MySQL 有记录时恢复 Redis；
+     * 若用户从未产生学习记录，则不初始化缓存，直接返回默认 0 进度。
+     */
+    public Map<Object, Object> peek(long userId, Lesson lesson, String traceId) {
         Map<Object, Object> values = redis.opsForHash().entries(key(userId, lesson.lessonId()));
         if (!values.isEmpty()) return values;
         if (!persisted(userId, lesson.lessonId()).isEmpty()) return read(userId, lesson, traceId);
@@ -76,7 +100,11 @@ public class LearningProgressStore {
                 String.valueOf(lesson.videoDuration() == null ? 0 : lesson.videoDuration()), "completed", "0", "updatedAt", "");
     }
 
-    public long update(long userId, RemoteClients.Lesson lesson, int seconds, double ratio, String traceId) {
+    /**
+     * 更新视频学习进度：先确保进度已初始化，再计算完成阈值并调用 Lua 原子更新 Redis；
+     * 防止进度倒退，同时标记 dirty，并返回 0=未更新、1=更新未完成、2=首次完成。
+     */
+    public long update(long userId, Lesson lesson, int seconds, double ratio, String traceId) {
         read(userId, lesson, traceId);
         int threshold = (int) Math.ceil(lesson.videoDuration() * ratio);
         List<?> result = redis.execute(progress, List.of(key(userId, lesson.lessonId()), DIRTY), member(userId, lesson.lessonId()),
@@ -85,7 +113,7 @@ public class LearningProgressStore {
         return ((Number) result.get(0)).longValue();
     }
 
-    public long complete(long userId, RemoteClients.Lesson lesson, String traceId) {
+    public long complete(long userId, Lesson lesson, String traceId) {
         read(userId, lesson, traceId);
         Long result = redis.execute(complete, List.of(key(userId, lesson.lessonId()), DIRTY), member(userId, lesson.lessonId()),
                 Instant.now().toString(), traceId == null ? "" : traceId);
@@ -98,6 +126,10 @@ public class LearningProgressStore {
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }
 
+    /**
+     * 统计指定课时中用户已完成的数量：
+     * 先读取 MySQL 已持久化完成记录，再合并 Redis 中尚未刷盘的最新完成状态，最后统计 lessonIds 中的完成数。
+     */
     public long countCompleted(long userId, List<Long> lessonIds) {
         if (lessonIds.isEmpty()) return 0;
         List<Long> persisted = jdbc.queryForList("SELECT lesson_id FROM learning_record WHERE user_id=? AND completed=1", Long.class, userId);
@@ -107,7 +139,9 @@ public class LearningProgressStore {
                 Object flag = redis.opsForHash().get(key(userId, id), "completed");
                 if ("1".equals(flag)) completed.add(id);
             }
-        } catch (Exception e) { log.warn("Redis completion lookup failed; using persisted progress, userId={}", userId, e); }
+        } catch (Exception exception) {
+            log.warn("Redis completion lookup failed; using persisted progress, userId={}", userId, exception);
+        }
         return lessonIds.stream().filter(completed::contains).count();
     }
 
@@ -123,40 +157,58 @@ public class LearningProgressStore {
                     if (ids.length != 2) throw new IllegalStateException("invalid dirty member");
                     String key = key(Long.parseLong(ids[0]), Long.parseLong(ids[1]));
                     Map<Object, Object> snapshot = redis.opsForHash().entries(key);
-                    if (snapshot.isEmpty()) { log.error("dirty progress missing, member={}", member); continue; }
+                    if (snapshot.isEmpty()) {
+                        log.error("dirty progress missing, member={}", member);
+                        continue;
+                    }
                     transaction.executeWithoutResult(status -> persist(snapshot));
                     redis.execute(clear, List.of(key, DIRTY), member, value(snapshot, "revision"));
                     saved++;
-                } catch (Exception e) { log.error("learning progress flush failed, member={}", member, e); }
+                } catch (Exception exception) {
+                    log.error("learning progress flush failed, member={}", member, exception);
+                }
             }
             log.info("learning progress batch persisted, count={}", saved);
-        } catch (Exception e) { log.error("learning progress batch unavailable", e); }
+        } catch (Exception exception) {
+            log.error("learning progress batch unavailable", exception);
+        }
     }
 
-    private void persist(Map<Object, Object> s) {
-        long userId = number(s, "userId"), lessonId = number(s, "lessonId");
-        int done = (int) number(s, "completed");
+    private void persist(Map<Object, Object> state) {
+        long userId = number(state, "userId");
+        long lessonId = number(state, "lessonId");
+        int done = (int) number(state, "completed");
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime learnedAt = LocalDateTime.ofInstant(Instant.parse(value(s, "updatedAt")), ZoneId.systemDefault());
-        LocalDateTime firstStart = s.containsKey("firstStartTime") ? LocalDateTime.parse(value(s, "firstStartTime")) : learnedAt;
+        LocalDateTime learnedAt = LocalDateTime.ofInstant(Instant.parse(value(state, "updatedAt")), ZoneId.systemDefault());
+        LocalDateTime firstStart = state.containsKey("firstStartTime") ? LocalDateTime.parse(value(state, "firstStartTime")) : learnedAt;
         jdbc.update("INSERT INTO learning_record (user_id,training_id,course_id,chapter_id,lesson_id,progress_seconds,duration_seconds,status,completed,first_start_time,last_learn_time,complete_time,create_time,update_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE progress_seconds=GREATEST(progress_seconds,VALUES(progress_seconds)),completed=GREATEST(completed,VALUES(completed)),status=GREATEST(status,VALUES(status)),complete_time=COALESCE(complete_time,VALUES(complete_time)),last_learn_time=GREATEST(last_learn_time,VALUES(last_learn_time)),update_time=VALUES(update_time)",
-                userId, number(s, "trainingId"), number(s, "courseId"), number(s, "chapterId"), lessonId,
-                number(s, "progressSeconds"), number(s, "durationSeconds"), done == 1 ? 2 : 1, done,
+                userId, number(state, "trainingId"), number(state, "courseId"), number(state, "chapterId"), lessonId,
+                number(state, "progressSeconds"), number(state, "durationSeconds"), done == 1 ? 2 : 1, done,
                 firstStart, learnedAt, done == 1 ? learnedAt : null, now, now);
         if (done == 1) {
             String eventId = UUID.randomUUID().toString();
             String payload = json.writeValueAsString(Map.of("eventId", eventId, "eventType", "LEARNING_COMPLETED", "userId", userId,
-                    "trainingId", number(s, "trainingId"), "courseId", number(s, "courseId"), "lessonId", lessonId,
-                    "occurredAt", now.toString(), "traceId", value(s, "traceId")));
+                    "trainingId", number(state, "trainingId"), "courseId", number(state, "courseId"), "lessonId", lessonId,
+                    "occurredAt", now.toString(), "traceId", value(state, "traceId")));
             jdbc.update("INSERT INTO event_outbox (event_id,event_type,user_id,lesson_id,payload,status,retry_count,create_time,update_time) VALUES (?,?,?,?,?,'NEW',0,?,?) ON DUPLICATE KEY UPDATE id=id",
                     eventId, "LEARNING_COMPLETED", userId, lessonId, payload, now, now);
         }
     }
-    private static String value(Map<Object, Object> s, String key) {
-        Object value = s.get(key); if (value == null) throw new IllegalStateException("missing " + key); return value.toString();
+
+    private static String value(Map<Object, Object> state, String key) {
+        Object value = state.get(key);
+        if (value == null) throw new IllegalStateException("missing " + key);
+        return value.toString();
     }
-    private static long number(Map<Object, Object> s, String key) { return Long.parseLong(value(s, key)); }
-    private static int flag(Object value) { return value instanceof Boolean b ? (b ? 1 : 0) : ((Number) value).intValue(); }
+
+    private static long number(Map<Object, Object> state, String key) {
+        return Long.parseLong(value(state, key));
+    }
+
+    private static int flag(Object value) {
+        return value instanceof Boolean bool ? (bool ? 1 : 0) : ((Number) value).intValue();
+    }
+
     private static LocalDateTime localDateTime(Object value) {
         if (value instanceof LocalDateTime local) return local;
         if (value instanceof Timestamp timestamp) return timestamp.toLocalDateTime();

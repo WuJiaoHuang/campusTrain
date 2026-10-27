@@ -10,6 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import com.campustrain.learningservice.client.EnrollmentClient;
+import com.campustrain.learningservice.client.TrainingClient;
+import com.campustrain.learningservice.client.dto.Lesson;
+import com.campustrain.learningservice.client.dto.RemoteResult;
+import com.campustrain.learningservice.context.RequestIdentity;
+import com.campustrain.learningservice.controller.LearningController;
+import com.campustrain.learningservice.service.LearningProgressStore;
+import com.campustrain.learningservice.service.LearningService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,7 +94,7 @@ class ProgressPersistenceIntegrationTest {
         try {
             redis.delete(key);
             LearningProgressStore actual = new LearningProgressStore(redis, jdbc, tx, new ObjectMapper(), 100);
-            RemoteClients.Lesson lesson = new RemoteClients.Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
+            Lesson lesson = new Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
             assertEquals("0", actual.peek(TEST_USER, lesson, "test").get("progressSeconds"));
             assertFalse(Boolean.TRUE.equals(redis.hasKey(key)));
             assertFalse(Boolean.TRUE.equals(redis.opsForSet().isMember(LearningProgressStore.DIRTY, TEST_USER + ":" + TEST_LESSON)));
@@ -117,10 +125,10 @@ class ProgressPersistenceIntegrationTest {
             JdbcTemplate counted = spy(jdbc);
             LearningProgressStore actual = new LearningProgressStore(redis, counted, tx, new ObjectMapper(), 100);
             TrainingClient training = mock(TrainingClient.class); EnrollmentClient enrollment = mock(EnrollmentClient.class);
-            RemoteClients.Lesson lesson = new RemoteClients.Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
-            when(training.lesson(TEST_LESSON)).thenReturn(new RemoteClients.Result<>(200, "success", lesson));
-            when(enrollment.active(16900001L, TEST_USER)).thenReturn(new RemoteClients.Result<>(200, "success", true));
-            MockMvc mvc = MockMvcBuilders.standaloneSetup(new LearningController(training, enrollment, actual, 0.9))
+            Lesson lesson = new Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
+            when(training.lesson(TEST_LESSON)).thenReturn(new RemoteResult<>(200, "success", lesson));
+            when(enrollment.active(16900001L, TEST_USER)).thenReturn(new RemoteResult<>(200, "success", true));
+            MockMvc mvc = MockMvcBuilders.standaloneSetup(new LearningController(new LearningService(training, enrollment, actual, 0.9)))
                     .addFilters(new RequestIdentity()).build();
             for (int i = 1; i <= 10; i++) {
                 mvc.perform(post("/learning/lessons/{id}/progress", TEST_LESSON).header("X-User-Id", TEST_USER)
