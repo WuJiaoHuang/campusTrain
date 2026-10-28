@@ -56,6 +56,10 @@ spring:
               uri: lb://learning-service
               predicates:
                 - Path=/learning/**
+            - id: growth-service
+              uri: lb://growth-service
+              predicates:
+                - Path=/growth/**
 
 jwt:
   secret: ${JWT_SECRET:development-only-secret-change-me-please-use-env-var-32-bytes-minimum}

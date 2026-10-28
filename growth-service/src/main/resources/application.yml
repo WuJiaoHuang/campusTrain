@@ -1,0 +1,51 @@
+server:
+  port: ${GROWTH_PORT:8088}
+spring:
+  application:
+    name: growth-service
+  config:
+    import:
+      - "optional:file:../.env[.properties]"
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:growth-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+      config:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:192.168.10.102}:${MYSQL_PORT:3306}/campus_growth?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123}
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.10.102}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.10.102}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        acknowledge-mode: manual
+campustrain:
+  growth:
+    points:
+      lesson-completed: 10
+xxl:
+  job:
+    admin:
+      addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://192.168.10.102:8089}
+    accessToken: ${XXL_JOB_ACCESS_TOKEN:}
+    executor:
+      appname: campustrain-growth-executor
+      address: ${XXL_JOB_EXECUTOR_ADDRESS:}
+      ip: ${XXL_JOB_EXECUTOR_IP:}
+      port: ${XXL_JOB_EXECUTOR_PORT:9998}
+      logpath: ${XXL_JOB_LOG_PATH:./logs/xxl-job}
+      logretentiondays: 30

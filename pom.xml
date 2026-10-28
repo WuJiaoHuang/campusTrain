@@ -30,6 +30,7 @@
         <module>enrollment-service</module>
         <module>auth-service</module>
         <module>learning-service</module>
+        <module>growth-service</module>
     </modules>
 
     <dependencyManagement>

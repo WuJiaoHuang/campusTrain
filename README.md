@@ -393,3 +393,7 @@ Stage13 实测：2026-10-22 已实际执行重置脚本及检查；实际连接 
 ## Stage16 学习服务
 
 学习服务的启动、数据库初始化、进度、Outbox 和当前验收边界见 [Stage16 文档](docs/stage16/README.md)。
+
+## Stage17 积分与排行榜
+
+Growth 服务 8088 消费独立 RabbitMQ 队列，根据学习完成事件维护 MySQL 积分账户/流水与 Redis 总榜/月榜；XXL-JOB 负责榜单重建与赛季结算。部署、接口、验收记录见 [Stage17 文档](docs/stage17/README.md)。
