@@ -47,7 +47,6 @@ Admin 地址默认 `http://192.168.10.102:8089`，executor appname 为 `campustr
 
 - `growth-service` 8088 启动，注册 Nacos；Gateway 8080 的 `/growth/**` 带 JWT 正常转发，不带 JWT 返回 401。伪造的 `X-User-Id: 17001` 被 Gateway 覆盖，学生 1001 的个人排名仍返回其真实身份。
 - Stage16 的 `POST /learning/lessons/5001/complete` 产生 Outbox 消息，`eventId=0fceb3e6-a38d-4464-9d11-7e4a7c12897c`，Growth 真正消费后账户与流水各增加 10；重复投递相同 eventId 后账户、流水、Redis 分数仍为 10。
-- 同一事件还被 Stage15 的独立审计消费者记录在 `campus_enrollment.learning_event_audit`，两套队列没有抢消息。
 - 示例三个用户总榜/月榜分别为 17001=30、17002=20、17003=10；通过 XXL-JOB 删除后重建总榜和月榜成功。
 - 用错误的 `REDIS_PORT=6380` 启动 Growth 并投递测试事件，MySQL 的 `points_flow`、`points_account` 成功记 10 分，Redis 不更新；恢复 6379 并执行 `growthRankingRebuildJob` 后两榜均恢复 10 分。
 - XXL-JOB Admin 3.4.1 容器在 VM 的 `hm-net` 上运行，管理端口 8089；`campustrain-growth-executor` 在 9998 在线注册。手工触发 `growthSeasonSettlementJob`，2026-10 结算为 SETTLED，2026-11 为 ACTIVE，历史排名 5 条；同月再执行仍为 5 条、任务执行记录 1 条，管理端 trigger/handle 均为 200。

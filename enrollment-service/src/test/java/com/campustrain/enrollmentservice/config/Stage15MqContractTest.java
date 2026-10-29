@@ -30,10 +30,7 @@ class Stage15MqContractTest {
     void businessQueuesAreDurableAndDeadLetterEnabled() {
         RabbitMqConfig config = new RabbitMqConfig();
         Queue enrollment = config.enrollmentSuccessQueue();
-        Queue learning = config.learningCompletedQueue();
         assertTrue(enrollment.isDurable());
-        assertTrue(learning.isDurable());
         assertEquals(MqConstants.DLX, enrollment.getArguments().get("x-dead-letter-exchange"));
-        assertEquals(MqConstants.DLX, learning.getArguments().get("x-dead-letter-exchange"));
     }
 }

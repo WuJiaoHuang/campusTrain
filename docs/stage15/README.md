@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | `campustrain.business.exchange` | `enrollment.success` | 报名成功通知 |
 | `campustrain.enrollment.success.queue` | `enrollment.success` | 报名通知消费者 |
-| `campustrain.business.exchange` | `learning.completed` | 学习完成契约演示 |
-| `campustrain.learning.completed.queue` | `learning.completed` | 学习完成审计消费者 |
-| `campustrain.dlx` | 对应 routing key | 两个主队列的死信交换机 |
-| `campustrain.*.dlq` | 对应 routing key | 失败三次后的死信队列 |
+| `campustrain.business.exchange` | `learning.completed` | Stage16 学习完成事件，路由到 Stage17 积分队列 |
+| `campustrain.growth.learning.completed.queue` | `learning.completed` | Stage17 积分消费者 |
+| `campustrain.dlx` | `enrollment.success` | 报名通知队列的死信交换机 |
+| `campustrain.enrollment.success.dlq` | `enrollment.success` | 报名通知失败三次后的死信队列 |
 
 Exchange、Queue 均为 durable；消息使用 persistent delivery mode。
 
@@ -23,9 +23,9 @@ Stage14 的 Redis Lua、Redisson 初始化锁、训练人数同步更新及数�
 
 ## 消费、ACK 与重试
 
-消费者使用 manual ACK：解析消息、检查 `(event_id, consumer_name)`、写幂等记录和通知/学习审计副作用都在同一 MySQL 本地事务中完成后才 ACK。相同 `eventId` 重投只会 ACK，不会重复产生副作用。失败时同步重试最多 3 次，仍失败执行 `basicReject(..., false)`，RabbitMQ 路由至 DLQ，不会无限 requeue。
+报名通知消费者使用 manual ACK：解析消息、检查 `(event_id, consumer_name)`、写幂等记录和通知副作用都在同一 MySQL 本地事务中完成后才 ACK。相同 `eventId` 重投只会 ACK，不会重复产生副作用。失败时同步重试最多 3 次，仍失败执行 `basicReject(..., false)`，RabbitMQ 路由至报名通知 DLQ，不会无限 requeue。
 
-`LearningCompletedEvent` 目前只是完整的事件契约和审计消费演示；Stage16 才接入真实学习进度 Producer，Stage17 才接入积分系统。
+Stage16 的真实学习进度 Producer 将 `learning.completed` 发布到业务交换机；Stage17 的独立积分消费者从 Growth 队列处理事件。enrollment-service 只消费报名成功通知。
 
 ## 初始化与检查
 
@@ -40,10 +40,10 @@ mysql -u root -p campus_enrollment < enrollment-service/sql/stage15-consistency-
 
 ## 真实验收步骤
 
-1. 设置实际 RabbitMQ 用户名、密码和 vhost，启动 `enrollment-service`，在管理台确认四个业务/DLQ 队列被声明。
+1. 设置实际 RabbitMQ 用户名、密码和 vhost，启动 `enrollment-service`，在管理台确认报名通知队列及其 DLQ 被声明。
 2. 用 Stage14 的真实学生完成报名。查询 `event_outbox` 应先出现记录，收到 Confirm ACK 后为 `SENT`；`notification_record` 只产生一条，`mq_consume_record` 有对应幂等记录。
 3. 用错误 routing key 发布测试消息，验证 mandatory Return 被记录且 Outbox 不会标记 `SENT`。
-4. 发送 `eventType=STAGE15_FAIL_ONCE` 的学习完成测试消息，验证第一次失败后第二次成功；发送 `eventType=STAGE15_FAIL_ALWAYS`，消费者三次失败后，管理台的 `campustrain.learning.completed.dlq` 应出现该消息。插入 `event_type=STAGE15_UNROUTABLE` 的测试 Outbox，可验证 mandatory Return 会使记录保持 `NEW`。
+4. 插入 `event_type=STAGE15_UNROUTABLE` 的测试 Outbox，可验证 mandatory Return 会使记录保持 `NEW`。报名通知消费失败时仍按原有重试和 DLQ 机制处理。
 5. 对同一个 `eventId` 发布两次，副作用记录仍只有一条。
 6. 停止消费者或应用，发布 100 条测试消息，观察 ready 堆积；恢复后 ready 回到 0，检查副作用记录无重复。
 7. 暂停 RabbitMQ 后完成真实报名：报名和 Outbox `NEW` 必须存在。恢复 RabbitMQ 后等待定时任务，Outbox 变 `SENT` 并产生一次通知记录。
