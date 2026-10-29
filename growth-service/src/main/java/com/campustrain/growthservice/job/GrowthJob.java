@@ -1,5 +1,6 @@
-package com.campustrain.growthservice;
+package com.campustrain.growthservice.job;
 
+import com.campustrain.growthservice.service.GrowthService;
 import com.xxl.job.core.context.XxlJobHelper;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +10,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class GrowthJob {
     private final GrowthService growthService;
-    GrowthJob(GrowthService growthService) { this.growthService = growthService; }
+    public GrowthJob(GrowthService growthService) { this.growthService = growthService; }
 
     @XxlJob("growthSeasonSettlementJob")
     public void settleSeason() {

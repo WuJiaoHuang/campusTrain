@@ -1,4 +1,4 @@
-package com.campustrain.growthservice;
+package com.campustrain.growthservice.dto;
 
 /** Stage15/16 event contract consumed by the independent growth queue. */
 public record LearningCompletedEvent(String eventId, String eventType, Long userId, Long trainingId,

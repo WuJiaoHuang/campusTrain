@@ -1,5 +1,8 @@
-package com.campustrain.growthservice;
+package com.campustrain.growthservice.mq;
 
+import com.campustrain.growthservice.config.RabbitConfig;
+import com.campustrain.growthservice.dto.LearningCompletedEvent;
+import com.campustrain.growthservice.service.GrowthService;
 import static org.mockito.Mockito.*;
 
 import com.rabbitmq.client.Channel;

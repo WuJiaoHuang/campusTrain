@@ -7,9 +7,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 @SpringBootApplication
-public class GrowthServiceApplication {
+public class GrowthApplication {
     public static void main(String[] args) {
-        SpringApplication.run(GrowthServiceApplication.class, args);
+        SpringApplication.run(GrowthApplication.class, args);
     }
 
     /** Spring executor discovers @XxlJob handlers after all Spring singletons are available. */

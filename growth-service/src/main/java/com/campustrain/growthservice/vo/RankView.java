@@ -1,3 +1,3 @@
-package com.campustrain.growthservice;
+package com.campustrain.growthservice.vo;
 
 public record RankView(long rank, long userId, long points) { }

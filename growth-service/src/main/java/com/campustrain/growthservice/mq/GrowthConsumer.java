@@ -1,5 +1,8 @@
-package com.campustrain.growthservice;
+package com.campustrain.growthservice.mq;
 
+import com.campustrain.growthservice.config.RabbitConfig;
+import com.campustrain.growthservice.dto.LearningCompletedEvent;
+import com.campustrain.growthservice.service.GrowthService;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
 import java.util.List;
@@ -19,13 +22,13 @@ class GrowthConsumer {
     private final GrowthService growthService;
     private final ObjectMapper objectMapper;
 
-    GrowthConsumer(GrowthService growthService, ObjectMapper objectMapper) {
+    public GrowthConsumer(GrowthService growthService, ObjectMapper objectMapper) {
         this.growthService = growthService;
         this.objectMapper = objectMapper;
     }
 
     @RabbitListener(queues = RabbitConfig.GROWTH_LEARNING_COMPLETED_QUEUE)
-    void consume(Message message, Channel channel) throws IOException {
+    public void consume(Message message, Channel channel) throws IOException {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
         try {
             growthService.award(objectMapper.readValue(message.getBody(), LearningCompletedEvent.class));
