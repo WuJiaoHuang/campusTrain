@@ -31,6 +31,7 @@
         <module>auth-service</module>
         <module>learning-service</module>
         <module>growth-service</module>
+        <module>community-service</module>
     </modules>
 
     <dependencyManagement>

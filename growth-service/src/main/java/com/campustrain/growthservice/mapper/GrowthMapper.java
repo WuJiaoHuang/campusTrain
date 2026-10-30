@@ -1,6 +1,7 @@
 package com.campustrain.growthservice.mapper;
 
 import com.campustrain.growthservice.dto.LearningCompletedEvent;
+import com.campustrain.growthservice.dto.CommunityActionEvent;
 import com.campustrain.growthservice.entity.UserPoints;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -18,6 +19,11 @@ public class GrowthMapper {
     public void insertFlow(LearningCompletedEvent event, int points, LocalDateTime occurredAt) {
         jdbc.update("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) VALUES(?,?,?,?,?,?,NOW())",
                 event.eventId(), event.userId(), "LEARNING_COMPLETED", event.lessonId(), points, occurredAt);
+    }
+
+    public void insertCommunityFlow(CommunityActionEvent event, int points, LocalDateTime occurredAt) {
+        jdbc.update("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) VALUES(?,?,?,?,?,?,NOW())",
+                event.eventId(), event.userId(), event.actionType(), event.targetId(), points, occurredAt);
     }
 
     public void incrementAccount(long userId, int points) {

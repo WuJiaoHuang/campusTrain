@@ -397,3 +397,7 @@ Stage13 实测：2026-10-22 已实际执行重置脚本及检查；实际连接 
 ## Stage17 积分与排行榜
 
 Growth 服务 8088 消费独立 RabbitMQ 队列，根据学习完成事件维护 MySQL 积分账户/流水与 Redis 总榜/月榜；XXL-JOB 负责榜单重建与赛季结算。部署、接口、验收记录见 [Stage17 文档](docs/stage17/README.md)。
+
+## Stage18：课程问答、评论与通用点赞
+
+community-service 8090 提供问题、回答、评论与通用点赞。点赞经 Redis Lua 原子更新，dirty set 定时合并写入 MySQL；提问和回答通过本地 Outbox 向 Growth 独立队列发送积分事件。初始化、接口、测试和一致性边界见 [Stage18 文档](docs/stage18/README.md)。

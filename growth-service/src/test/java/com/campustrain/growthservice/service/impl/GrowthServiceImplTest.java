@@ -1,6 +1,7 @@
 package com.campustrain.growthservice.service.impl;
 
 import com.campustrain.growthservice.dto.LearningCompletedEvent;
+import com.campustrain.growthservice.dto.CommunityActionEvent;
 import com.campustrain.growthservice.entity.UserPoints;
 import com.campustrain.growthservice.mapper.GrowthMapper;
 import com.campustrain.growthservice.service.GrowthService;
@@ -37,6 +38,32 @@ class GrowthServiceImplTest {
         verify(mapper).incrementAccount(1001, 10);
         verify(redis.opsForZSet()).incrementScore(GrowthService.TOTAL_RANKING_KEY, "1001", 10);
         verify(redis.opsForZSet()).incrementScore(GrowthService.monthRankingKey("2026-10"), "1001", 10);
+    }
+
+    @Test
+    void communityQuestionAndAnswerUseIndependentConfiguredPoints() {
+        GrowthServiceImpl service = new GrowthServiceImpl(mapper, redis, 10, 2, 5);
+        when(redis.opsForZSet()).thenReturn(mock(ZSetOperations.class));
+        CommunityActionEvent question = new CommunityActionEvent("question-event", "COMMUNITY_ACTION", 1001L,
+                18001L, "QUESTION", "QUESTION_CREATED", "2026-10-30T10:00:00+08:00", "trace");
+        CommunityActionEvent answer = new CommunityActionEvent("answer-event", "COMMUNITY_ACTION", 1001L,
+                18002L, "ANSWER", "ANSWER_CREATED", "2026-10-30T10:00:00+08:00", "trace");
+        assertTrue(service.awardCommunity(question));
+        assertTrue(service.awardCommunity(answer));
+        verify(mapper).insertCommunityFlow(eq(question), eq(2), any());
+        verify(mapper).insertCommunityFlow(eq(answer), eq(5), any());
+        verify(mapper).incrementAccount(1001L, 2);
+        verify(mapper).incrementAccount(1001L, 5);
+    }
+
+    @Test
+    void duplicateCommunityEventDoesNotIncreaseAccount() {
+        GrowthServiceImpl service = new GrowthServiceImpl(mapper, redis, 10, 2, 5);
+        CommunityActionEvent event = new CommunityActionEvent("duplicate", "COMMUNITY_ACTION", 1001L,
+                18001L, "QUESTION", "QUESTION_CREATED", "2026-10-30T10:00:00+08:00", "trace");
+        doThrow(new DuplicateKeyException("duplicate")).when(mapper).insertCommunityFlow(eq(event), eq(2), any());
+        assertFalse(service.awardCommunity(event));
+        verify(mapper, never()).incrementAccount(anyLong(), anyInt());
     }
 
     @Test

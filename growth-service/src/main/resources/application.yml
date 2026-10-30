@@ -37,6 +37,8 @@ campustrain:
   growth:
     points:
       lesson-completed: 10
+      question-created: 2
+      answer-created: 5
 xxl:
   job:
     admin:

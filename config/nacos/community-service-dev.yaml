@@ -1,0 +1,8 @@
+campustrain:
+  community:
+    like:
+      flush-interval-ms: 5000
+      flush-batch-size: 100
+  growth:
+    question-points: 2
+    answer-points: 5

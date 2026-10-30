@@ -1,0 +1,41 @@
+server:
+  port: ${COMMUNITY_PORT:8090}
+spring:
+  application:
+    name: community-service
+  config:
+    import:
+      - "optional:file:../.env[.properties]"
+      - "nacos:campustrain-common-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+      - "nacos:community-service-${CAMPUS_ENV:dev}.yaml?group=CAMPUS_TRAIN&refreshEnabled=true"
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+      config:
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
+        namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:192.168.10.102}:${MYSQL_PORT:3306}/campus_community?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123}
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.10.102}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      connect-timeout: 2s
+      timeout: 2s
+  rabbitmq:
+    host: ${RABBITMQ_HOST:192.168.10.102}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+campustrain:
+  community:
+    like:
+      flush-interval-ms: 5000
+      flush-batch-size: 100
