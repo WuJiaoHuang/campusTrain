@@ -42,7 +42,7 @@ public class CommunityController {
             @RequestParam(name = "size", defaultValue = "20") int size) {
         return ApiResult.success(communityService.getQuestionPage(trainingId, lessonId, page, size));
     }
-
+    //问题详情
     @GetMapping("/questions/{id}")
     public ApiResult<QuestionView> getQuestionDetail(@PathVariable("id") long id) {
         return ApiResult.success(communityService.getQuestionDetail(id));

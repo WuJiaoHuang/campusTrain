@@ -100,6 +100,7 @@ public class LikeServiceImpl implements LikeService {
         return getLikeState(type, targetId, persistedCount(type, targetId));
     }
 
+    //一次性批量查询一组问题/回答的“实时点赞数 + 当前用户是否点赞”，优先查 Redis，Redis 出问题就回退 MySQL。
     @Override
     public Map<Long, LikeView> getLikeStates(String rawType, Map<Long, Long> persistedCounts) {
         String type = LikeService.targetType(rawType);

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 @FeignClient(name = "training-service", contextId = "communityTraining")
 public interface TrainingClient {
+    //根据id找training对象
     @GetMapping("/internal/trainings/{id}/enrollment-check")
     RemoteResult<Object> getTrainingEnrollmentCheck(@PathVariable("id") Long id);
     @GetMapping("/internal/learning/lessons/{id}")

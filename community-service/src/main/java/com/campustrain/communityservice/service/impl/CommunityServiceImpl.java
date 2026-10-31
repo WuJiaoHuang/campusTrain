@@ -173,7 +173,7 @@ public class CommunityServiceImpl implements CommunityService {
         return new QuestionView(row.id(), row.trainingId(), row.courseId(), row.lessonId(), row.userId(),
                 row.title(), row.content(), row.answerCount(), count, liked, row.createTime(), List.of(), List.of());
     }
-
+//把数据库查出来的一批 Answer 实体，转换成前端要返回的 AnswerView 列表，同时补上每个回答的实时点赞状态
     private List<AnswerView> toAnswerViews(List<Answer> rows) {
         if (rows.isEmpty()) return List.of();
         Map<Long, LikeView> states = likeService.getLikeStates("ANSWER", rows.stream().collect(
