@@ -27,26 +27,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class GrowthServiceImpl implements GrowthService {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
-    private final GrowthMapper mapper;
-    private final StringRedisTemplate redis;
+    private final GrowthMapper growthMapper;
+    private final StringRedisTemplate stringRedisTemplate;
     private final int lessonCompletedPoints;
     private final int questionCreatedPoints;
     private final int answerCreatedPoints;
 
     @Autowired
-    public GrowthServiceImpl(GrowthMapper mapper, StringRedisTemplate redis,
+    public GrowthServiceImpl(GrowthMapper growthMapper, StringRedisTemplate stringRedisTemplate,
                          @Value("${campustrain.growth.points.lesson-completed:10}") int lessonCompletedPoints,
                          @Value("${campustrain.growth.points.question-created:2}") int questionCreatedPoints,
                          @Value("${campustrain.growth.points.answer-created:5}") int answerCreatedPoints) {
-        this.mapper = mapper;
-        this.redis = redis;
+        this.growthMapper = growthMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
         this.lessonCompletedPoints = lessonCompletedPoints;
         this.questionCreatedPoints = questionCreatedPoints;
         this.answerCreatedPoints = answerCreatedPoints;
     }
 
-    public GrowthServiceImpl(GrowthMapper mapper, StringRedisTemplate redis, int lessonCompletedPoints) {
-        this(mapper, redis, lessonCompletedPoints, 2, 5);
+    public GrowthServiceImpl(GrowthMapper growthMapper, StringRedisTemplate stringRedisTemplate, int lessonCompletedPoints) {
+        this(growthMapper, stringRedisTemplate, lessonCompletedPoints, 2, 5);
     }
 
     /** Returns false for a duplicate event, allowing an at-least-once consumer to ACK safely. */
@@ -57,16 +57,16 @@ public class GrowthServiceImpl implements GrowthService {
             return false;
         }
         try {
-            mapper.insertFlow(event, lessonCompletedPoints, shanghaiDateTime(event.occurredAt()));
-            mapper.incrementAccount(event.userId(), lessonCompletedPoints);
+            growthMapper.insertFlow(event, lessonCompletedPoints, shanghaiDateTime(event.occurredAt()));
+            growthMapper.incrementAccount(event.userId(), lessonCompletedPoints);
         } catch (DuplicateKeyException duplicate) {
             log.warn("duplicate learning event ignored, eventId={}, userId={}, traceId={}", event.eventId(), event.userId(), event.traceId());
             return false;
         }
         try {
             String user = String.valueOf(event.userId());
-            redis.opsForZSet().incrementScore(TOTAL_RANKING_KEY, user, lessonCompletedPoints);
-            redis.opsForZSet().incrementScore(GrowthService.monthRankingKey(monthOf(event.occurredAt())), user, lessonCompletedPoints);
+            stringRedisTemplate.opsForZSet().incrementScore(TOTAL_RANKING_KEY, user, lessonCompletedPoints);
+            stringRedisTemplate.opsForZSet().incrementScore(GrowthService.monthRankingKey(monthOf(event.occurredAt())), user, lessonCompletedPoints);
         } catch (Exception ex) {
             log.warn("Redis ranking projection failed; rebuild will recover it, eventId={}, userId={}, traceId={}",
                     event.eventId(), event.userId(), event.traceId(), ex);
@@ -89,8 +89,8 @@ public class GrowthServiceImpl implements GrowthService {
             return false;
         }
         try {
-            mapper.insertCommunityFlow(event, points, shanghaiDateTime(event.occurredAt()));
-            mapper.incrementAccount(event.userId(), points);
+            growthMapper.insertCommunityFlow(event, points, shanghaiDateTime(event.occurredAt()));
+            growthMapper.incrementAccount(event.userId(), points);
         } catch (DuplicateKeyException duplicate) {
             log.warn("duplicate community event ignored, eventId={}, userId={}, traceId={}",
                     event.eventId(), event.userId(), event.traceId());
@@ -98,8 +98,8 @@ public class GrowthServiceImpl implements GrowthService {
         }
         try {
             String user = String.valueOf(event.userId());
-            redis.opsForZSet().incrementScore(TOTAL_RANKING_KEY, user, points);
-            redis.opsForZSet().incrementScore(GrowthService.monthRankingKey(monthOf(event.occurredAt())), user, points);
+            stringRedisTemplate.opsForZSet().incrementScore(TOTAL_RANKING_KEY, user, points);
+            stringRedisTemplate.opsForZSet().incrementScore(GrowthService.monthRankingKey(monthOf(event.occurredAt())), user, points);
         } catch (Exception ex) {
             log.warn("community Redis ranking projection failed; rebuild can recover, eventId={}, userId={}, traceId={}",
                     event.eventId(), event.userId(), event.traceId(), ex);
@@ -110,12 +110,12 @@ public class GrowthServiceImpl implements GrowthService {
     }
 
     public List<RankView> top(String key, int limit) {
-        var users = redis.opsForZSet().reverseRange(key, 0, limit - 1);
+        var users = stringRedisTemplate.opsForZSet().reverseRange(key, 0, limit - 1);
         if (users == null || users.isEmpty()) return List.of();
         List<RankView> result = new ArrayList<>();
         long rank = 1;
         for (String user : users) {
-            Double score = redis.opsForZSet().score(key, user);
+            Double score = stringRedisTemplate.opsForZSet().score(key, user);
             if (score != null) result.add(new RankView(rank++, Long.parseLong(user), score.longValue()));
         }
         return result;
@@ -123,22 +123,22 @@ public class GrowthServiceImpl implements GrowthService {
 
     public RankView mine(String key, long userId) {
         String member = String.valueOf(userId);
-        Long rank = redis.opsForZSet().reverseRank(key, member);
-        Double score = redis.opsForZSet().score(key, member);
+        Long rank = stringRedisTemplate.opsForZSet().reverseRank(key, member);
+        Double score = stringRedisTemplate.opsForZSet().score(key, member);
         return rank == null || score == null ? null : new RankView(rank + 1, userId, score.longValue());
     }
 
     /** Rebuilds Redis from MySQL without changing the points facts. */
     public void rebuild(String month) {
-        redis.delete(TOTAL_RANKING_KEY);
-        for (UserPoints row : mapper.totalPoints()) {
-            redis.opsForZSet().add(TOTAL_RANKING_KEY, String.valueOf(row.userId()), row.points());
+        stringRedisTemplate.delete(TOTAL_RANKING_KEY);
+        for (UserPoints row : growthMapper.totalPoints()) {
+            stringRedisTemplate.opsForZSet().add(TOTAL_RANKING_KEY, String.valueOf(row.userId()), row.points());
         }
         if (month != null && !month.isBlank()) {
             String key = GrowthService.monthRankingKey(month);
-            redis.delete(key);
-            for (UserPoints row : mapper.monthlyPoints(month)) {
-                redis.opsForZSet().add(key, String.valueOf(row.userId()), row.points());
+            stringRedisTemplate.delete(key);
+            for (UserPoints row : growthMapper.monthlyPoints(month)) {
+                stringRedisTemplate.opsForZSet().add(key, String.valueOf(row.userId()), row.points());
             }
         }
         log.info("growth ranking rebuilt from MySQL, month={}", month);
@@ -150,24 +150,24 @@ public class GrowthServiceImpl implements GrowthService {
         String seasonCode = requestedSeason == null || requestedSeason.isBlank()
                 ? YearMonth.now(BUSINESS_ZONE).minusMonths(1).toString() : requestedSeason;
         log.info("season settlement started, seasonCode={}", seasonCode);
-        mapper.ensureSeason(seasonCode);
-        Long seasonId = mapper.lockedSeasonId(seasonCode);
-        String current = mapper.seasonStatus(seasonId);
+        growthMapper.ensureSeason(seasonCode);
+        Long seasonId = growthMapper.lockedSeasonId(seasonCode);
+        String current = growthMapper.seasonStatus(seasonId);
         if ("SETTLED".equals(current)) {
-            mapper.recordExecution(seasonCode, "DONE");
+            growthMapper.recordExecution(seasonCode, "DONE");
             log.info("season already settled, seasonCode={}", seasonCode);
             return;
         }
-        mapper.recordExecution(seasonCode, "RUNNING");
-        List<UserPoints> ranks = mapper.seasonPoints(seasonCode);
+        growthMapper.recordExecution(seasonCode, "RUNNING");
+        List<UserPoints> ranks = growthMapper.seasonPoints(seasonCode);
         long rank = 1;
         for (UserPoints row : ranks) {
-            mapper.insertHistory(seasonId, seasonCode, row.userId(), row.points(), rank++);
+            growthMapper.insertHistory(seasonId, seasonCode, row.userId(), row.points(), rank++);
         }
-        mapper.settleSeason(seasonId);
+        growthMapper.settleSeason(seasonId);
         YearMonth next = YearMonth.parse(seasonCode).plusMonths(1);
-        mapper.ensureSeason(next.toString());
-        mapper.recordExecution(seasonCode, "DONE");
+        growthMapper.ensureSeason(next.toString());
+        growthMapper.recordExecution(seasonCode, "DONE");
         log.info("season settled, seasonCode={}, rankedUsers={}", seasonCode, ranks.size());
     }
 

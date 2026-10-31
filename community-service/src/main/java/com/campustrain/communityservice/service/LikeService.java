@@ -5,11 +5,11 @@ import com.campustrain.communityservice.vo.LikeView;
 import java.util.Map;
 
 public interface LikeService {
-    LikeView like(String type, long targetId);
-    LikeView unlike(String type, long targetId);
-    LikeView read(String type, long targetId, long persistedCount);
-    LikeView readCurrent(String type, long targetId);
-    Map<Long, LikeView> readBatch(String type, Map<Long, Long> persistedCounts);
+    LikeView likeTarget(String type, long targetId);
+    LikeView unlikeTarget(String type, long targetId);
+    LikeView getLikeState(String type, long targetId, long persistedCount);
+    LikeView getLikeState(String type, long targetId);
+    Map<Long, LikeView> getLikeStates(String type, Map<Long, Long> persistedCounts);
 
     static String targetType(String value) {
         if ("QUESTION".equals(value) || "ANSWER".equals(value)) return value;

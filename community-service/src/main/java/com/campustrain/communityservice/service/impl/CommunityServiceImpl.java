@@ -14,6 +14,9 @@ import com.campustrain.communityservice.dto.QuestionRequest;
 import com.campustrain.communityservice.entity.Answer;
 import com.campustrain.communityservice.entity.Comment;
 import com.campustrain.communityservice.entity.Question;
+import com.campustrain.communityservice.entity.QuestionInsert;
+import com.campustrain.communityservice.entity.AnswerInsert;
+import com.campustrain.communityservice.entity.CommentInsert;
 import com.campustrain.communityservice.exception.CommunityException;
 import com.campustrain.communityservice.mapper.CommunityMapper;
 import com.campustrain.communityservice.service.CommunityService;
@@ -39,22 +42,22 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @RequiredArgsConstructor
 public class CommunityServiceImpl implements CommunityService {
-    private final CommunityMapper mapper;
-    private final TrainingClient training;
-    private final EnrollmentClient enrollment;
-    private final LikeService likes;
-    private final ObjectMapper json;
+    private final CommunityMapper communityMapper;
+    private final TrainingClient trainingClient;
+    private final EnrollmentClient enrollmentClient;
+    private final LikeService likeService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
     public long createQuestion(QuestionRequest request) {
-        UserIdentity identity = identity();
+        UserIdentity identity = requireIdentity();
         if (request.trainingId() == null || request.trainingId() <= 0) throw new CommunityException(400, "培训ID不合法");
-        remoteTraining(request.trainingId());
+        validateTrainingExists(request.trainingId());
         if (request.lessonId() != null) {
             RemoteResult<LessonInfo> lesson;
-            try { lesson = training.lesson(request.lessonId()); }
-            catch (FeignException ex) { throw remoteFailure(ex); }
+            try { lesson = trainingClient.getLessonInfo(request.lessonId()); }
+            catch (FeignException ex) { throw remoteServiceFailure(ex); }
             if (lesson == null || lesson.code() == null || lesson.code() == 503)
                 throw new CommunityException(503, "培训服务暂时不可用");
             if (lesson == null || lesson.code() == null || lesson.code() != 200 || lesson.data() == null
@@ -64,8 +67,8 @@ public class CommunityServiceImpl implements CommunityService {
             }
         } else if (request.courseId() != null) {
             RemoteResult<Catalog> catalog;
-            try { catalog = training.catalog(request.trainingId()); }
-            catch (FeignException ex) { throw remoteFailure(ex); }
+            try { catalog = trainingClient.getCatalog(request.trainingId()); }
+            catch (FeignException ex) { throw remoteServiceFailure(ex); }
             if (catalog == null || catalog.code() == null || catalog.code() != 200 || catalog.data() == null
                     || catalog.data().courses() == null || catalog.data().courses().stream()
                     .noneMatch(course -> request.courseId().equals(course.id()))) {
@@ -74,34 +77,37 @@ public class CommunityServiceImpl implements CommunityService {
         }
         if ("STUDENT".equals(identity.role())) {
             RemoteResult<Boolean> active;
-            try { active = enrollment.active(request.trainingId(), identity.userId()); }
-            catch (FeignException ex) { throw remoteFailure(ex); }
+            try { active = enrollmentClient.hasActiveEnrollment(request.trainingId(), identity.userId()); }
+            catch (FeignException ex) { throw remoteServiceFailure(ex); }
             if (active == null || active.code() == null || active.code() == 503)
                 throw new CommunityException(503, "报名服务暂时不可用");
             if (active.code() != 200 || !Boolean.TRUE.equals(active.data()))
                 throw new CommunityException(403, "学生需要有效报名才能提问");
         }
-        long id = mapper.insertQuestion(identity.userId(), request);
-        writeEvent("QUESTION_CREATED", "QUESTION", id, identity);
+        QuestionInsert questionInsert = new QuestionInsert(null, request.trainingId(), request.courseId(),
+                request.lessonId(), identity.userId(), request.title().trim(), request.content().trim());
+        communityMapper.insertQuestion(questionInsert);
+        long id = questionInsert.getId();
+        insertCommunityOutboxEvent("QUESTION_CREATED", "QUESTION", id, identity);
         log.info("question created, traceId={}, userId={}, targetId={}", identity.traceId(), identity.userId(), id);
         return id;
     }
 
     @Override
-    public PageView<QuestionView> questions(Long trainingId, Long lessonId, int page, int size) {
-        paging(page, size);
-        List<QuestionView> rows = mapper.questions(trainingId, lessonId, page, size).stream()
-                .map(row -> questionView(row, false)).toList();
-        return new PageView<>(mapper.questionCount(trainingId, lessonId), page, size, rows);
+    public PageView<QuestionView> getQuestionPage(Long trainingId, Long lessonId, int page, int size) {
+        validatePagination(page, size);
+        List<QuestionView> rows = communityMapper.selectQuestionPage(trainingId, lessonId, (page - 1) * size, size).stream()
+                .map(row -> toQuestionView(row, false)).toList();
+        return new PageView<>(communityMapper.countQuestions(trainingId, lessonId), page, size, rows);
     }
 
     @Override
-    public QuestionView question(long id) {
-        Question row = mapper.question(id);
+    public QuestionView getQuestionDetail(long id) {
+        Question row = communityMapper.selectQuestionById(id);
         if (row == null) throw new CommunityException(404, "问题不存在");
-        List<AnswerView> answers = answerViews(mapper.answers(id, 1, 100));
-        List<CommentView> comments = mapper.comments("QUESTION", id, 1, 100).stream().map(this::commentView).toList();
-        QuestionView base = questionView(row, true);
+        List<AnswerView> answers = toAnswerViews(communityMapper.selectAnswerPage(id, 0, 100));
+        List<CommentView> comments = communityMapper.selectCommentPage("QUESTION", id, 0, 100).stream().map(this::toCommentView).toList();
+        QuestionView base = toQuestionView(row, true);
         return new QuestionView(base.id(), base.trainingId(), base.courseId(), base.lessonId(), base.userId(),
                 base.title(), base.content(), base.answerCount(), base.likeCount(), base.likedByMe(),
                 base.createTime(), answers, comments);
@@ -110,59 +116,67 @@ public class CommunityServiceImpl implements CommunityService {
     @Override
     @Transactional
     public long createAnswer(long questionId, AnswerRequest request) {
-        UserIdentity identity = identity();
-        if (mapper.question(questionId) == null) throw new CommunityException(404, "问题不存在");
-        long id = mapper.insertAnswer(questionId, identity.userId(), request.content());
-        mapper.incrementAnswerCount(questionId);
-        writeEvent("ANSWER_CREATED", "ANSWER", id, identity);
+        UserIdentity identity = requireIdentity();
+        if (communityMapper.selectQuestionById(questionId) == null) throw new CommunityException(404, "问题不存在");
+        AnswerInsert answerInsert = new AnswerInsert(null, questionId, identity.userId(), request.content().trim());
+        communityMapper.insertAnswer(answerInsert);
+        long id = answerInsert.getId();
+        if (communityMapper.incrementQuestionAnswerCount(questionId) != 1)
+            throw new IllegalStateException("question count update failed");
+        insertCommunityOutboxEvent("ANSWER_CREATED", "ANSWER", id, identity);
         log.info("answer created, traceId={}, userId={}, targetId={}", identity.traceId(), identity.userId(), id);
         return id;
     }
 
     @Override
-    public PageView<AnswerView> answers(long questionId, int page, int size) {
-        paging(page, size);
-        if (mapper.question(questionId) == null) throw new CommunityException(404, "问题不存在");
-        return new PageView<>(mapper.answerCount(questionId), page, size,
-                answerViews(mapper.answers(questionId, page, size)));
+    public PageView<AnswerView> getAnswerPage(long questionId, int page, int size) {
+        validatePagination(page, size);
+        if (communityMapper.selectQuestionById(questionId) == null) throw new CommunityException(404, "问题不存在");
+        return new PageView<>(communityMapper.countAnswers(questionId), page, size,
+                toAnswerViews(communityMapper.selectAnswerPage(questionId, (page - 1) * size, size)));
     }
 
     @Override
     @Transactional
     public long createComment(CommentRequest request) {
-        UserIdentity identity = identity();
+        UserIdentity identity = requireIdentity();
         String type = LikeService.targetType(request.targetType());
-        if (!targetExists(type, request.targetId())) throw new CommunityException(404, "评论目标不存在");
-        long id = mapper.insertComment(type, request.targetId(), identity.userId(), request.content());
-        mapper.incrementCommentCount(type, request.targetId());
+        if (!doesTargetExist(type, request.targetId())) throw new CommunityException(404, "评论目标不存在");
+        CommentInsert commentInsert = new CommentInsert(null, type, request.targetId(), identity.userId(), request.content().trim());
+        communityMapper.insertComment(commentInsert);
+        long id = commentInsert.getId();
+        int updated = "QUESTION".equals(type)
+                ? communityMapper.incrementQuestionCommentCount(request.targetId())
+                : communityMapper.incrementAnswerCommentCount(request.targetId());
+        if (updated != 1) throw new IllegalStateException("comment count update failed");
         log.info("comment created, traceId={}, userId={}, targetType={}, targetId={}",
                 identity.traceId(), identity.userId(), type, request.targetId());
         return id;
     }
 
     @Override
-    public PageView<CommentView> comments(String type, long targetId, int page, int size) {
-        paging(page, size);
+    public PageView<CommentView> getCommentPage(String type, long targetId, int page, int size) {
+        validatePagination(page, size);
         type = LikeService.targetType(type);
-        if (!targetExists(type, targetId)) throw new CommunityException(404, "评论目标不存在");
-        return new PageView<>(mapper.commentCount(type, targetId), page, size,
-                mapper.comments(type, targetId, page, size).stream().map(this::commentView).toList());
+        if (!doesTargetExist(type, targetId)) throw new CommunityException(404, "评论目标不存在");
+        return new PageView<>(communityMapper.countComments(type, targetId), page, size,
+                communityMapper.selectCommentPage(type, targetId, (page - 1) * size, size).stream().map(this::toCommentView).toList());
     }
 
-    private QuestionView questionView(Question row, boolean includeLiveLike) {
+    private QuestionView toQuestionView(Question row, boolean includeLiveLike) {
         long count = row.likeCount();
         boolean liked = false;
         if (includeLiveLike) {
-            var state = likes.read("QUESTION", row.id(), row.likeCount());
+            var state = likeService.getLikeState("QUESTION", row.id(), row.likeCount());
             count = state.likeCount(); liked = state.likedByMe();
         }
         return new QuestionView(row.id(), row.trainingId(), row.courseId(), row.lessonId(), row.userId(),
                 row.title(), row.content(), row.answerCount(), count, liked, row.createTime(), List.of(), List.of());
     }
 
-    private List<AnswerView> answerViews(List<Answer> rows) {
+    private List<AnswerView> toAnswerViews(List<Answer> rows) {
         if (rows.isEmpty()) return List.of();
-        Map<Long, LikeView> states = likes.readBatch("ANSWER", rows.stream().collect(
+        Map<Long, LikeView> states = likeService.getLikeStates("ANSWER", rows.stream().collect(
                 Collectors.toMap(Answer::id, Answer::likeCount)));
         return rows.stream().map(row -> {
             LikeView state = states.get(row.id());
@@ -171,41 +185,41 @@ public class CommunityServiceImpl implements CommunityService {
         }).toList();
     }
 
-    private CommentView commentView(Comment row) {
+    private CommentView toCommentView(Comment row) {
         return new CommentView(row.id(), row.targetType(), row.targetId(), row.userId(), row.content(), row.createTime());
     }
 
-    private boolean targetExists(String type, long id) {
-        return "QUESTION".equals(type) ? mapper.question(id) != null : mapper.answer(id) != null;
+    private boolean doesTargetExist(String type, long id) {
+        return "QUESTION".equals(type) ? communityMapper.selectQuestionById(id) != null : communityMapper.selectAnswerById(id) != null;
     }
 
-    private void remoteTraining(long id) {
+    private void validateTrainingExists(long id) {
         RemoteResult<Object> result;
-        try { result = training.training(id); }
-        catch (FeignException ex) { throw remoteFailure(ex); }
+        try { result = trainingClient.getTrainingEnrollmentCheck(id); }
+        catch (FeignException ex) { throw remoteServiceFailure(ex); }
         if (result == null || result.code() == null || result.code() != 200 || result.data() == null)
             throw new CommunityException(result != null && result.code() != null && result.code() == 503 ? 503 : 404,
                     "培训不存在或暂不可用");
     }
 
-    private CommunityException remoteFailure(FeignException ex) {
+    private CommunityException remoteServiceFailure(FeignException ex) {
         log.error("community Feign unavailable, traceId={}", UserContext.traceId(), ex);
         return new CommunityException(503, "依赖服务暂时不可用");
     }
 
-    private UserIdentity identity() {
+    private UserIdentity requireIdentity() {
         UserIdentity identity = UserContext.current();
         if (identity == null || identity.userId() == null) throw new CommunityException(401, "用户身份缺失");
         return identity;
     }
 
-    private void writeEvent(String action, String type, long targetId, UserIdentity identity) {
+    private void insertCommunityOutboxEvent(String action, String type, long targetId, UserIdentity identity) {
         CommunityActionEvent event = new CommunityActionEvent(UUID.randomUUID().toString(), "COMMUNITY_ACTION",
                 identity.userId(), targetId, type, action, LocalDateTime.now().toString(), identity.traceId());
-        mapper.insertOutbox(event.eventId(), event.eventType(), targetId, json.writeValueAsString(event));
+        communityMapper.insertOutboxEvent(event.eventId(), event.eventType(), targetId, objectMapper.writeValueAsString(event));
     }
 
-    private void paging(int page, int size) {
+    private void validatePagination(int page, int size) {
         if (page < 1 || size < 1 || size > 100) throw new CommunityException(400, "分页参数不合法");
     }
 }

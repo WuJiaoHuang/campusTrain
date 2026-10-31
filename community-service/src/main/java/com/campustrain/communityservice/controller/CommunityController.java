@@ -27,65 +27,65 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/community")
 @RequiredArgsConstructor
 public class CommunityController {
-    private final CommunityService community;
-    private final LikeService likes;
+    private final CommunityService communityService;
+    private final LikeService likeService;
 
     @PostMapping("/questions")
     public ApiResult<Long> createQuestion(@Valid @RequestBody QuestionRequest request) {
-        return ApiResult.success(community.createQuestion(request));
+        return ApiResult.success(communityService.createQuestion(request));
     }
 
     @GetMapping("/questions")
-    public ApiResult<PageView<QuestionView>> questions(@RequestParam(name = "trainingId", required = false) Long trainingId,
+    public ApiResult<PageView<QuestionView>> getQuestionPage(@RequestParam(name = "trainingId", required = false) Long trainingId,
             @RequestParam(name = "lessonId", required = false) Long lessonId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
-        return ApiResult.success(community.questions(trainingId, lessonId, page, size));
+        return ApiResult.success(communityService.getQuestionPage(trainingId, lessonId, page, size));
     }
 
     @GetMapping("/questions/{id}")
-    public ApiResult<QuestionView> question(@PathVariable("id") long id) {
-        return ApiResult.success(community.question(id));
+    public ApiResult<QuestionView> getQuestionDetail(@PathVariable("id") long id) {
+        return ApiResult.success(communityService.getQuestionDetail(id));
     }
 
     @PostMapping("/questions/{questionId}/answers")
     public ApiResult<Long> createAnswer(@PathVariable("questionId") long questionId, @Valid @RequestBody AnswerRequest request) {
-        return ApiResult.success(community.createAnswer(questionId, request));
+        return ApiResult.success(communityService.createAnswer(questionId, request));
     }
 
     @GetMapping("/questions/{questionId}/answers")
-    public ApiResult<PageView<AnswerView>> answers(@PathVariable("questionId") long questionId,
+    public ApiResult<PageView<AnswerView>> getAnswerPage(@PathVariable("questionId") long questionId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
-        return ApiResult.success(community.answers(questionId, page, size));
+        return ApiResult.success(communityService.getAnswerPage(questionId, page, size));
     }
 
     @PostMapping("/comments")
     public ApiResult<Long> createComment(@Valid @RequestBody CommentRequest request) {
-        return ApiResult.success(community.createComment(request));
+        return ApiResult.success(communityService.createComment(request));
     }
 
     @GetMapping("/comments")
-    public ApiResult<PageView<CommentView>> comments(@RequestParam("targetType") String targetType,
+    public ApiResult<PageView<CommentView>> getCommentPage(@RequestParam("targetType") String targetType,
             @RequestParam("targetId") long targetId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
-        return ApiResult.success(community.comments(targetType, targetId, page, size));
+        return ApiResult.success(communityService.getCommentPage(targetType, targetId, page, size));
     }
 
     @PostMapping("/likes")
-    public ApiResult<LikeView> like(@Valid @RequestBody LikeRequest request) {
-        return ApiResult.success(likes.like(request.targetType(), request.targetId()));
+    public ApiResult<LikeView> likeTarget(@Valid @RequestBody LikeRequest request) {
+        return ApiResult.success(likeService.likeTarget(request.targetType(), request.targetId()));
     }
 
     @DeleteMapping("/likes")
-    public ApiResult<LikeView> unlike(@Valid @RequestBody LikeRequest request) {
-        return ApiResult.success(likes.unlike(request.targetType(), request.targetId()));
+    public ApiResult<LikeView> unlikeTarget(@Valid @RequestBody LikeRequest request) {
+        return ApiResult.success(likeService.unlikeTarget(request.targetType(), request.targetId()));
     }
 
     @GetMapping("/likes")
-    public ApiResult<LikeView> likeState(@RequestParam("targetType") String targetType,
+    public ApiResult<LikeView> getLikeState(@RequestParam("targetType") String targetType,
             @RequestParam("targetId") long targetId) {
-        return ApiResult.success(likes.readCurrent(targetType, targetId));
+        return ApiResult.success(likeService.getLikeState(targetType, targetId));
     }
 }
