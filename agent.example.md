@@ -2,7 +2,7 @@
 
 ## 项目与仓库
 CampusTrain：高校内部培训与能力认证微服务平台。主线：Spring Cloud、分布式中间件、OSS 视频与学习进度、Docker、可观测性、AIOps。
-当前目标：Stage18；已完成 Stage1~17，以代码及验收结果为准。分支：master。
+当前目标：Stage19；已完成 Stage1~18，以代码及验收结果为准。分支：master。
 开始前先检查远端与本地改动，不覆盖已完成阶段，按 Stage 顺序开发。
 
 ## 技术栈与服务
@@ -30,4 +30,8 @@ AccessKey 仅从 OSS_ACCESS_KEY_ID 和 OSS_ACCESS_KEY_SECRET 环境变量读取�
 使用 SLF4J、Logback、@Slf4j；禁止 System.out、System.err 和 printStackTrace；错误日志保留 Throwable，高频进度日志用 DEBUG。
 SQL 由 Agent 负责，不能破坏无关数据库；测试数据必须一致。每阶段测试完成后按用户要求提交推送和创建 tag。
 禁止提交 agent.md、.env、真实 AccessKey 或生产 Secret。
-Stage18 只实现问答、回答、评论、通用点赞、写合并和问答积分事件；不实现 Stage19 或更后阶段。
+Stage19 仅实现 Docker Compose 全栈部署与健康检查；不实现 Stage20 或更后阶段。
+
+## Stage19 部署约定
+Compose 文件为根目录 `docker-compose.yml`，文档为 `docs/stage19/README.md`。Docker network 为 `campustrain-net`；服务名为 `mysql`、`redis`、`nacos`、`rabbitmq`、`xxl-job-admin`、`nginx`、`campus-gateway`、`auth-service`、`user-service`、`training-service`、`enrollment-service`、`learning-service`、`growth-service`、`community-service`。容器内用这些服务名通过 Docker DNS 通信；业务统一入口为 `http://<VM_IP>/` 的 Nginx 80 端口。
+持久卷：`campustrain-mysql-data`、`campustrain-redis-data`、`campustrain-rabbitmq-data`（现有 RabbitMQ 卷的别名）、`campustrain-nacos-logs`、`campustrain-xxl-logs`。管理端口分别为 Nacos 8848、RabbitMQ 15672、XXL-JOB 8089。先配置被 Git 忽略的 `.env` 并运行 `mvn clean package -DskipTests`、`docker compose build`、`docker compose up -d`；扩容培训服务用 `docker compose up -d --scale training-service=3`。不要删除旧容器或使用 `docker compose down -v`。

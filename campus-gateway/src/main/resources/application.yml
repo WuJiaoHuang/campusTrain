@@ -20,7 +20,7 @@ spring:
       datasource:
         gateway-flow:
           nacos:
-            server-addr: 192.168.10.102:8848
+            server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
             namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
             group-id: CAMPUS_TRAIN
             data-id: campus-gateway-sentinel-flow-${CAMPUS_ENV:dev}.json
@@ -28,9 +28,9 @@ spring:
             rule-type: gw-flow
     nacos:
       discovery:
-        server-addr: 192.168.10.102:8848
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
       config:
-        server-addr: 192.168.10.102:8848
+        server-addr: ${NACOS_HOST:192.168.10.102}:${NACOS_PORT:8848}
         namespace: ${NACOS_CONFIG_NAMESPACE:campustrain-dev}
     gateway:
       server:
