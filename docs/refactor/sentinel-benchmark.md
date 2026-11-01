@@ -2,9 +2,9 @@
 
 ## 环境与拓扑
 
-2026-11-02 实测。压测客户端是 Windows 本机的 JMeter 5.6.3 CLI，外部业务入口是 VMware CentOS 虚拟机 `http://192.168.10.102/` 的 Nginx，再到 Gateway。未使用 Windows Docker Desktop。Nacos Discovery 实时查询显示 campus-gateway、auth-service、learning-service、community-service、training-service、enrollment-service、user-service 各 1 个健康实例；目标容器内端口分别为 8080、8084、8087、8090、8082、8083、8081。MySQL、Redis、Nacos、RabbitMQ 在同一虚拟机的 Docker Compose 基础设施中；Sentinel Dashboard `http://192.168.10.102:8858/` 实测 HTTP 200。当前是单 Gateway、单业务实例的 smoke 拓扑，不是 Stage10 旧版 Windows 本机多实例拓扑。
+2026-11-02 实测。压测客户端是 Windows 本机的 JMeter 5.6.3 CLI，外部业务入口是 VMware CentOS 虚拟机 `http://192.168.10.102/` 的 Nginx，再到 Gateway。未使用 Windows Docker Desktop。Nacos Discovery 实时查询显示 campus-gateway、auth-service、learning-service、community-service、training-service、enrollment-service、user-service、growth-service 各 1 个健康实例；目标容器内端口分别为 8080、8084、8087、8090、8082、8083、8081、8088。MySQL、Redis、Nacos、RabbitMQ 在同一虚拟机的 Docker Compose 基础设施中；Sentinel Dashboard `http://192.168.10.102:8858/` 实测 HTTP 200。当前是单 Gateway、单业务实例的 smoke 拓扑，不是 Stage10 旧版 Windows 本机多实例拓扑。
 
-Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS；Stage C 结束后 `learning-service-sentinel-flow-dev.json` 已写入 learning-progress-report=8 QPS；Stage D 结束后 `community-service-sentinel-flow-dev.json` 已写入 community-like=8、community-unlike=8 QPS，community 不再为 `[]`。以上三份 flow 配置均已与 Nacos 读回内容核对，详见下文。本次没有改旧阈值：training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例。
+Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS；Stage C 结束后 `learning-service-sentinel-flow-dev.json` 已写入 learning-progress-report=8 QPS；Stage D 结束后 `community-service-sentinel-flow-dev.json` 已写入 community-like=8、community-unlike=8 QPS，community 不再为 `[]`。Stage E 结束后 `training-service-sentinel-flow-dev.json` 写入 oss-upload-url=8、oss-play-url=8，`training-service-sentinel-degrade-dev.json` 新增 oss-play-url 异常比例规则；training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例均未改。五份配置均已与 Nacos 读回内容逐字节核对（exactMatch=True），详见下文；最终资源汇总见文末。
 
 ## 独立测试数据
 
@@ -310,3 +310,174 @@ CPU 采样（每 5 秒，去掉首末各 1–2 个采样点）：
 - 30 QPS 取消和 50 QPS 取消分别为 34.7 秒、25.6 秒，原因是专用已点赞用户池有限；两轮的成功数与计数下降一致，不能把其“目标 QPS 达成率”直接外推到 60 秒稳态。
 - 整机只有 2 vCPU、约 3.7 GiB 内存、2.5 GiB swap，14 个容器同时运行；点赞 50 QPS 时 load 23.76、CPU 100%。绝对容量和阈值只适用于当前单实例共享 VM，不能外推到生产；换机器、换实例数必须重测。
 - 本阶段只清理/使用专用基准目标与用户，没有 TRUNCATE、没有无 WHERE 的 DELETE、没有删除数据卷；未改业务代码、未改旧阈值。回退时将 Nacos 与本地 community flow 恢复为 `[]` 即关闭两条规则。原始 JTL、summary 和 CPU CSV 保存在被 Git 忽略的 `scripts/sentinel-benchmark/results/`，不提交。
+
+## Stage E：OSS 预签名 URL 与最终治理验收
+
+2026-11-02 03:20–04:55 实测。入口为 `POST /video/create/upload-url` 和 `GET /lesson/get/play-url/{lessonId}`，经 Nginx、Gateway 到单实例 training-service（容器内 8082）。本阶段只测试 OSS 预签名 URL 生成，不上传视频字节，也不下载视频；每个请求都会创建并关闭 OSSClient 后签发短期地址。测试令牌使用专用基准用户 1992001（`benchmark_comm_00001`），播放课时为 199080，复用了 Stage16 已绑定的真实 OSS 对象和视频元数据，没有伪造 objectKey，没有上传文件。所有原始 JTL、summary 与 CPU CSV 仍在被 Git 忽略的 `scripts/sentinel-benchmark/results/`。
+
+### E.1 环境、工具与口径
+
+- Windows 本机 JMeter 5.6.3 CLI；外部入口 `http://192.168.10.102/`；单 Gateway、单 training 实例；VMware CentOS 2 vCPU、约 3.7 GiB RAM、约 3 GiB swap，14 个 Docker Compose 容器同时运行。
+- 每轮 60 秒、ramp 5 秒（另注明除外），ConstantThroughputTimer 控制目标；实际 QPS 按 JTL 首请求开始至末请求完成的时间窗计算；P90/P95/P99 为全量样本 nearest-rank；Error% 包含非 200 响应。
+- 稳定性判据与 B/C/D 相同：实际吞吐 ≥ 目标 95%、无 5xx/超时/连接错误、P95 不明显失控、CPU 不持续饱和；同时观察 OSS SDK 客户端创建/关闭、线程等待和整机 CPU。
+- 关闭 flow 的裸容量阶段先确认 training flow 中两条 OSS 规则仍为 `[]`；完成容量测试后写入 8 QPS，再做带 flow 的 0.75T、1.0T、1.5T、2.0T 复测。没有把裸容量和启用态结果混在同一张表。
+
+### E.2 未治理裸容量：oss-upload-url
+
+第一批用 50–800 目标、15–200 线程，线程数不足以打满目标，只作为诊断证据，不用于稳定点结论：
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | P95 ms | 异常 |
+| ---: | ---: | ---: | ---: | ---: | --- |
+| 50 | 15 | 678 | 10.932 | 4,583 | 0 |
+| 100 | 30 | 1,254 | 19.123 | 6,471 | 0 |
+| 200 | 60 | 1,343 | 22.422 | 6,772 | 0 |
+| 300 | 80 | 2,412 | 38.297 | 4,320 | 0 |
+| 500 | 120 | 2,378 | 38.434 | 8,086 | 0 |
+| 800 | 200 | 3,100 | 49.668 | 6,933 | 16 个 HTTP 504，Error 0.516% |
+
+800 目标轮的 16 个 504 是客户端/线程与共享 VM 调度共同造成的实际失败，保留在此，不纳入稳定点。随后用足够线程复测：
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | P95 ms | 200 / 异常 | 机器 CPU 均值/峰值 | load 峰值 |
+| ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| 5 | 20 | 315 | 5.313 | 154 | 315 / 0 | 60.7% / 82.3% | 16.02 |
+| 10 | 30 | 622 | 10.472 | 133 | 622 / 0 | 66.8% / 100% | 15.86 |
+| 20 | 60 | 1,184 | 19.426 | 4,647 | 1,184 / 0 | 87.2% / 100% | 21.22 |
+| 30 | 90 | 1,860 | 31.370 | 1,181 | 1,860 / 0 | 87.0% / 98.5% | 20.85 |
+| 50 | 150 | 2,932 | 48.808 | 4,134 | 2,932 / 0 | 97.0% / 100% | 20.91 |
+
+### E.3 未治理裸容量：oss-play-url
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | P95 ms | 200 / 异常 | 机器 CPU 均值/峰值 | load 峰值 |
+| ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| 5 | 20 | 315 | 5.318 | 275 | 315 / 0 | 62.2% / 96% | 13.94 |
+| 10 | 30 | 621 | 10.498 | 145 | 621 / 0 | 67.2% / 100% | 6.85 |
+| 20 | 60 | 1,241 | 20.926 | 1,623 | 1,241 / 0 | 77.9% / 99.6% | 13.73 |
+| 30 | 90 | 1,849 | 31.171 | 496 | 1,849 / 0 | 87.5% / 100% | 14.45 |
+| 50 | 150 | 2,813 | 46.777 | 4,998 | 2,813 / 0 | 97.2% / 99.9% | 19.92 |
+
+两个 OSS 资源在 10 QPS 时实际吞吐分别为 10.472 和 10.498，P95 为 133/145ms，Error=0，是最后完全稳定点；20 QPS 起延迟明显恶化（P95 4,647/1,623ms），50 QPS 时整机 CPU 已到 97%，吞吐约 47–49 QPS，P95 4–5 秒，属于过载区。两资源的裸容量曲线接近，原因是瓶颈都在 training JVM 内每次请求创建/关闭 OSSClient 及整机 CPU，而不是上传与播放签名逻辑本身。
+
+### E.4 最终阈值与 flow 配置
+
+**oss-upload-url = 8 QPS/实例，oss-play-url = 8 QPS/实例**。两资源稳定点均为 10 QPS，按 80% 取 8，低于 20 QPS 的拐点，也为共享 VM 上的 GC、Nacos 心跳和其它业务保留余量；没有取 10（贴稳定点、无余量），也没有取 12（已进入延迟上升区）。阈值是每个 training JVM 的本地 FlowRule，不是集群总配额。
+
+Nacos `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `training-service-sentinel-flow-dev.json` 与本地文件均已写入以下四条规则；前两条旧规则保持原值不变：
+
+```json
+[
+  {"resource":"training-detail","limitApp":"default","grade":1,"count":800,"strategy":0,"controlBehavior":0},
+  {"resource":"training-enrollment-check","limitApp":"default","grade":1,"count":750,"strategy":0,"controlBehavior":0},
+  {"resource":"oss-upload-url","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0},
+  {"resource":"oss-play-url","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0}
+]
+```
+
+发布后从 Nacos 读回，与本地文件逐字节一致；没有删除或修改 `training-detail` 800、`training-enrollment-check` 750。
+
+### E.5 开启 Sentinel 后复测
+
+最终采用带 CPU 采集的一批数据；所有轮次均 0 个 503、0 timeout、0 connection refused/reset：
+
+| 资源 | 目标 QPS | 线程 | 样本 | 实际 QPS | 200 | 429 | 成功 QPS | P95 ms | CPU 均值/峰值 | load 峰值 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| upload | 6（0.75T） | 6 | 360 | 6.071 | 360 | 0 | 6.071 | 106 | 59.2% / 94.44% | 7.14 |
+| upload | 8（1.0T） | 8 | 482 | 8.132 | 477 | 5 | 7.950 | 119 | 58.7% / 87.5% | 4.27 |
+| upload | 12（1.5T） | 12 | 721 | 12.169 | 478 | 243 | 7.967 | 162 | 66.4% / 88.24% | 8.95 |
+| upload | 16（2.0T） | 16 | 963 | 16.239 | 478 | 485 | 7.967 | 117 | 64.1% / 76.84% | 8.44 |
+| play | 6（0.75T） | 6 | 362 | 6.093 | 361 | 1 | 6.017 | 150 | 58.0% / 100% | 6.41 |
+| play | 8（1.0T） | 8 | 481 | 8.099 | 471 | 10 | 7.850 | 207 | 60.7% / 97.07% | 7.62 |
+| play | 12（1.5T） | 12 | 726 | 12.216 | 477 | 249 | 7.950 | 206 | 61.6% / 78.57% | 9.12 |
+| play | 16（2.0T） | 16 | 965 | 16.223 | 477 | 488 | 7.950 | 169 | 63.7% / 77.65% | 13.8 |
+
+成功吞吐被稳定限制在约 7.8–8.0 QPS，8 QPS 目标轮 429 很少（upload 5、play 10）；12/16 QPS 的额外流量主要被 429 拒绝。所有 429 均来自 `FlowException`，没有把 503 或超时计成 429。
+
+另有一批未采集 CPU 的首轮数据保留为对照：upload 在 6/8/12/16 目标的 429 分别为 0/15/250/487，play 为 2/27/174/485；play 12 QPS 首轮实际 9.137、成功 6.204、P95 2,497ms，明显受共享 VM 饱和影响。该批不作为最终 CPU 证据，但不能从记录中删除；最终数值以上表带 CPU 批次为准。
+
+### E.6 oss-play-url 受控 degrade 实验
+
+选择异常比例（grade=1）而不是 RT 规则：正常预签名请求的 RT 很低，共享 VM 抖动会使 RT 阈值不稳定；用无效 lessonId 可以精确制造方法异常，验证打开、半开和恢复。规则写入 `training-service-sentinel-degrade-dev.json`，同时保留原有两条 `training-detail` 规则：
+
+```json
+[
+  {"resource":"training-detail","grade":0,"count":500,"timeWindow":5,"minRequestAmount":5,"slowRatioThreshold":0.5,"statIntervalMs":10000},
+  {"resource":"training-detail","grade":1,"count":0.5,"timeWindow":5,"minRequestAmount":5,"statIntervalMs":10000},
+  {"resource":"oss-play-url","grade":1,"count":0.5,"timeWindow":10,"minRequestAmount":5,"statIntervalMs":1000}
+]
+```
+
+实验步骤与结果：
+
+1. 基线：有效 `lessonId=199080` 单次请求 HTTP 200，耗时 62.4ms。
+2. 0.225 秒内并发 8 个无效 `lessonId=199999999` 请求，全部 HTTP 200，但响应 body 为 `code=400`、`"课时不存在"`。全局异常处理器把业务异常包装成 HTTP 200；Sentinel 的方法异常统计仍记录到这些异常。
+3. 随后 3 次有效请求均返回 HTTP 503，body `code=503`、`"视频服务暂时不可用"`，耗时 1,196.4/79.7/34.8ms；日志出现三行 `blockType=DegradeException`，证明熔断打开。
+4. 10.646 秒后单次有效请求恢复 HTTP 200、75.1ms；之后连续 5 次有效请求均为 HTTP 200（46.9–79.9ms），证明 timeWindow=10 秒后进入半开并恢复。
+
+该实验说明：`oss-play-url` 的降级保护能把持续方法异常快速转成 503，而不是让异常请求继续穿透；`oss-upload-url` 本阶段只配置 flow，没有为其伪造 degrade 阈值。degrade 规则已发布到 Nacos 并读回，与本地文件逐字节一致；实验注入只使用无效 lessonId，没有改业务代码。
+
+### E.7 最终高负载保护验收
+
+六条 flow 全部启用后，按用户要求至少对 auth-login、learning-progress-report、community-like 做最终高负载验收：
+
+| 资源 | 目标/线程/时长 | 样本 | 实际 QPS | 200 | 429 | 503 | timeout/connection | 成功 QPS | 总 P95 ms | 成功 P95 ms | Max ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| auth-login | 30 / 30 / 60s | 1,343 | 20.532 | 179 | 1,164 | 0 | 0 / 0 | 2.737 | 4,001 | 6,848 | 7,115 |
+| learning-progress-report | 32 / 32 / 60s | 1,230 | 20.023 | 407 | 823 | 0 | 0 / 0 | 6.626 | 4,458 | 7,560 | 13,768 |
+| community-like | 32 / 32 / 60s | 1,692 | 28.475 | 464 | 1,228 | 0 | 0 / 0 | 7.824 | 1,861 | 2,878 | 3,921 |
+
+三者的成功吞吐都明显低于目标并被阈值封顶，超额流量主要返回 429，0 个 503，0 超时/连接拒绝/重置；服务在验收后仍健康。auth 成功 QPS 只有约 2.7，是 BCrypt 与整机 CPU 的既有瓶颈；learning 成功约 6.6，community-like 成功约 7.8，均与前面 B/C/D 的阈值结论一致。
+
+learning 最终高负载第一次运行使用了过期 JWT，1,887 个样本全部 401，该轮标记为无效，不纳入验收；随后通过真实 `/auth/login` 为 200 个专用用户重新签发令牌，在约 3 QPS 登录限制下完成后再跑，上表是重跑结果。该失败轮保留在 results 中，不用来证明任何容量结论。
+
+### E.8 最终业务回归
+
+在六条 flow 和 oss-play-url degrade 全部启用的状态下执行：
+
+1. 使用专用用户 1992001 通过 `POST /auth/login` 登录，HTTP 200、code 200。
+2. `GET /training/get/199001` HTTP 200，返回培训详情，enrolledCount=1,001。
+3. `POST /enrollment/create` body `{"trainingId":199001}` 首次调用在 30 秒客户端读超时；服务端随后于 04:47:16 提交 enrollmentId=7618，training enrolled_count 变为 1,002。客户端超时是长时间空闲后 Feign/Nacos 订阅冷启动造成的，后续 `GET /enrollment/list/mine` HTTP 200 已确认有效报名；该失败没有被隐藏或改写为 200。
+4. `POST /learning/start/199080`、`POST /learning/report-progress/199080` body `{"progressSeconds":30}`、`GET /learning/get-progress/199080` 均 HTTP 200，进度 30/100、completed=false；MySQL learning_record 与 Redis 进度随后对齐。
+5. `GET /growth/get/total-ranking?limit=5` HTTP 200 并返回排名；`GET /growth/get/my-ranking` HTTP 200 但 body 为空，因为该基准用户没有积分，不是接口错误。
+6. `GET /community/get/like-status` 返回 411；`POST /community/like` 200，count 411→412、changed=true；`POST /community/unlike` 200，count 412→411、changed=true；最终 like-status 为 411，没有负值。
+7. `POST /video/create/upload-url` 首次传入带 `/` 的文件名，按业务校验返回 `code=400`；改用合法文件名 `stage19-regression.mp4` 后 HTTP 200 并生成 objectKey/uploadUrl。`GET /lesson/get/play-url/199080` HTTP 200 并生成 playUrl。两个签名 URL 的完整值和签名参数不写入文档。
+
+`docker ps` 显示 14 个容器全部 healthy，所有容器 RestartCount=0；业务回归后 Nginx、Gateway、training、auth、learning、community、growth 均可正常响应。首次报名 30 秒超时是本次回归唯一的客户端失败，已在上面明确记录。
+
+### E.9 最终数据一致性
+
+等待 dirty 归零后执行全量核对，不只抽查最终目标：
+
+- learning：Redis 中 3,173 个 `campustrain:learning:progress:*` 键全部能在 MySQL 找到对应记录，`progress_seconds` 与 `completed` 不一致数为 0，缺失数为 0；`campustrain:learning:dirty` 为 0；`completed=1 且 progress_seconds < duration_seconds*0.9` 的记录为 0。没有错误完成、进度回退或脏数据。
+- community：11 个 `campustrain:community:like:count:*` 键全部满足 Redis count = Redis users = MySQL like_count = status=1 有效关系数，不一致数为 0；`campustrain:community:like:dirty` 为 0；question/answer 负 like_count 为 0；重复 status=1 关系为 0；0/1 之外的 status 为 0。
+- 专用目标 QUESTION 199000001 最终 Redis count=411、users=411，MySQL like_count=411、有效关系=411、取消关系=1；回归用户的 like→unlike 已回到 411，没有残留有效关系或负数。
+- `campus_learning.event_outbox` 仍为 6 行历史数据，基准用户完成事件为 0；`campus_enrollment` 中用户 1992001 有 1 条有效报名（enrollmentId=7618）。没有执行 TRUNCATE、无 WHERE 的 DELETE 或数据卷删除。
+
+### E.10 Nacos、Dashboard 与健康检查
+
+五份配置均在 namespace `campustrain-dev`、group `CAMPUS_TRAIN` 下从 Nacos 读回，与 Git 本地文件逐字节一致：auth flow、learning flow、community flow、training flow、training degrade。auth/learning 在最终检查时曾出现内容相同但尾部换行不一致，重新发布本地内容后读回 exactMatch=True；没有改变规则值。
+
+Sentinel Dashboard 登录成功；当前 healthy training 实例 `172.19.0.9:8719` 的资源列表同时包含 `/video/create/upload-url`、`oss-upload-url`、`/lesson/get/play-url/{lessonId}`、`oss-play-url`、`/training/get/{trainingId}`、`training-detail`、`/internal/training/get-enrollment-check/{trainingId}`、`training-enrollment-check`。auth/learning/community 的六个新资源也都在各自 healthy 实例上显示。Dashboard 仍保留训练服务 5 条 machine 记录（仅 1 条 healthy）和 Gateway 3 条记录（仅 1 条 healthy），属于历史实例残留；不影响当前路由和资源展示，本次未删除容器或历史记录。
+
+04:50:19–04:51:08 出现一次 Nacos 客户端 gRPC 重连窗口，多个服务日志出现 `Server check fail...9848`、`Client not connected, current status:UNHEALTHY`；04:51:08 后至验收结束没有新增 ERROR，Nacos readiness 返回 OK，8 个服务实例在 Nacos 中均为 healthy。该窗口没有产生新的业务请求失败记录；此前 04:45 的报名超时是 Feign 冷启动，不是这次重连。
+
+### E.11 限制
+
+- 2 vCPU / 约 3.7 GiB 共享 VM、14 个容器同时运行；OSS 容量和 P95 受整机 CPU、线程调度和 OSSClient 创建/关闭影响，绝对值不能外推到生产；换机器、换实例数必须重测。
+- 只测试预签名 URL 生成，没有真正上传/下载视频，因此没有覆盖 OSS 服务端网络延迟、带宽和对象权限；签名 URL 未写入文档。
+- upload 第一批 50–800 目标线程不足，800 轮出现 16 个 504；该批保留为诊断证据，不用于稳定点。play 首批未采集 CPU，12 QPS 首轮出现实际 9.137、成功 6.204、P95 2,497ms 的 VM 饱和值；最终采用带 CPU 的重跑批次。
+- degrade 实验用无效 lessonId 注入方法异常，业务全局异常处理器返回 HTTP 200 + body code 400；这是本文明确记录的口径，不代表 Sentinel 把异常 HTTP 状态当作成功。
+- 单实例结果不代表多实例总容量；阈值是每实例本地规则。若需回退，删除对应 flow/degrade 条目或恢复为空数组即可；本次没有修改旧阈值和业务代码。
+
+## 最终资源表
+
+| 资源 | 服务 | 保护类型 | 裸容量稳定点 | 拐点 | 峰值 | 最终 flow QPS | degrade 规则 | 证据 |
+| --- | --- | --- | --- | --- | --- | ---: | --- | --- |
+| training-detail | training-service | flow + RT/异常比例 degrade | 800–1,000 QPS（800 P95 22ms；1,000 P95 23ms） | 1,100 QPS（P95 183ms） | 1,165.7 QPS @1,200 目标 | 800 | RT>500ms、比例>0.5、minRequestAmount=5、statIntervalMs=10000、timeWindow=5s | [Stage10 基准](../stage10/benchmark-results.md) |
+| training-enrollment-check | training-service | flow | 1,000 QPS（958.7，P95 154ms） | 1,200 QPS（1,091.2，P95 264ms） | 1,150.7 QPS @1,400 目标 | 750 | — | [Stage10 基准](../stage10/benchmark-results.md) |
+| enrollment-create | enrollment-service | flow | 200 QPS（198.4，P95 483ms） | 250 QPS（P95 413–629ms） | 302 QPS @500 目标 | 160 | — | [Stage10 基准](../stage10/benchmark-results.md) |
+| Gateway enrollment route | campus-gateway | flow | 200 QPS（201.2–201.8，P95 76–402ms） | 300 QPS（P95 841ms） | 281.4 QPS @500 目标 | 150 | — | [Stage10 基准](../stage10/benchmark-results.md) |
+| auth-login | auth-service | flow | 4 QPS（4.041，Error=0） | 4–5 QPS（5 目标仅 87.2%） | 4.36 QPS | 3 | — | 本文 B.2–B.4 |
+| learning-progress-report | learning-service | flow | 10 QPS（10.017，P95 1,985ms） | 10–15 QPS（15 重跑 92.7%，P95 7,509ms） | 13.91 QPS | 8 | — | 本文 C.2–C.5 |
+| community-like | community-service | flow | 10 QPS（10.236，P95 993ms） | 20–30 QPS（20 重跑 19.331，P95 1,263ms；30 P95 2,629ms） | 29.07 QPS | 8 | — | 本文 D.2、D.3、D.5 |
+| community-unlike | community-service | flow | 30 QPS（29.464，P95 1,348ms） | 50 QPS（72.4%，P95 3,639ms） | 36.22 QPS | 8 | — | 本文 D.4、D.6 |
+| oss-upload-url | training-service | flow | 10 QPS（10.472，P95 133ms） | 20 QPS（19.426，P95 4,647ms） | 48.808 QPS @50 目标 | 8 | — | 本文 E.2、E.5 |
+| oss-play-url | training-service | flow + 异常比例 degrade | 10 QPS（10.498，P95 145ms） | 20 QPS（20.926，P95 1,623ms） | 46.777 QPS @50 目标 | 8 | grade=1、比例>0.5、minRequestAmount=5、statIntervalMs=1000、timeWindow=10s | 本文 E.3、E.5、E.6 |
