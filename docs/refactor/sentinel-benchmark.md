@@ -4,7 +4,7 @@
 
 2026-11-02 实测。压测客户端是 Windows 本机的 JMeter 5.6.3 CLI，外部业务入口是 VMware CentOS 虚拟机 `http://192.168.10.102/` 的 Nginx，再到 Gateway。未使用 Windows Docker Desktop。Nacos Discovery 实时查询显示 campus-gateway、auth-service、learning-service、community-service、training-service、enrollment-service、user-service 各 1 个健康实例；目标容器内端口分别为 8080、8084、8087、8090、8082、8083、8081。MySQL、Redis、Nacos、RabbitMQ 在同一虚拟机的 Docker Compose 基础设施中；Sentinel Dashboard `http://192.168.10.102:8858/` 实测 HTTP 200。当前是单 Gateway、单业务实例的 smoke 拓扑，不是 Stage10 旧版 Windows 本机多实例拓扑。
 
-Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS；Stage C 结束后 `learning-service-sentinel-flow-dev.json` 已写入 learning-progress-report=8 QPS，community 仍为 `[]`，详见下文。本次没有改旧阈值：training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例。
+Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS；Stage C 结束后 `learning-service-sentinel-flow-dev.json` 已写入 learning-progress-report=8 QPS；Stage D 结束后 `community-service-sentinel-flow-dev.json` 已写入 community-like=8、community-unlike=8 QPS，community 不再为 `[]`。以上三份 flow 配置均已与 Nacos 读回内容核对，详见下文。本次没有改旧阈值：training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例。
 
 ## 独立测试数据
 
@@ -199,3 +199,114 @@ CPU 采样（每 5 秒，去掉首末各 1–2 个采样点）：
 - 2 vCPU / 3.7 GiB 共享 VM 的绝对容量不能外推到生产；换机器、换实例数必须重测。
 - 单实例结果不代表多实例总容量；阈值是每实例本地规则。
 - 若需回退，将 Nacos 与本地文件恢复为 `[]` 即关闭流控；本次未改其它资源、未改旧阈值、未改业务代码。原始 JTL、summary 与 CPU CSV 保存在被 Git 忽略的 `scripts/sentinel-benchmark/results/`，不提交。
+
+## Stage D：community-like / community-unlike
+
+2026-11-02 02:30–03:10 实测。入口为 `POST /community/like` 和 `POST /community/unlike`，经 Nginx、Gateway 到单实例 community-service（容器内 8090）。点赞与取消点赞分开测试；每轮前后读取 Redis 的 users/count/revision/init/dirty 和 MySQL 的 like_count、有效/取消关系数。D 阶段只接入并启用两条 Sentinel 规则，不改业务代码。
+
+### D.1 基准数据、令牌与口径
+
+- 社区基准用户为 `benchmark_comm_00001`–`benchmark_comm_06000`（userId 1992001–1998000）。只把这些专用用户的 BCrypt 哈希更新为进程内存中的随机口令（cost 10），再通过真实 `/auth/login` 获取 6,000 个 JWT，耗时约 1,131 秒；口令和 JWT 均未落盘或提交，令牌 CSV 位于被 Git 忽略的 `scripts/sentinel-benchmark/results/tokens/community-tokens.csv`。
+- 6,000 次登录会受 auth-login=3 QPS 限制，生成令牌期间临时移除该流控，完成后立即恢复为 3 QPS 并从 Nacos 读回确认；临时关闭仅用于准备令牌，不作为 auth-login 的压测结果。
+- 专用目标如下。点赞主容量使用不同用户的首次点赞；取消点赞只使用此前已点赞的用户，不用从未点赞的用户刷 `changed=false` 快路径。
+
+| 目标 | ID | 用途 | 说明 |
+| --- | --- | --- | --- |
+| QUESTION | 199000002 | Q2 点赞/取消主容量 | 预初始化用户 1992001，避免 Redisson 首次初始化锁的冷启动 |
+| ANSWER | 199000002 | A2 幂等验证 | 同一用户连续点赞、连续取消 |
+| QUESTION | 199000003 | Q3 warm-up | 只用于预热，不纳入容量结论 |
+| QUESTION | 199000004 | Q4 50 QPS 点赞、50 QPS 取消 | 全新目标，预初始化用户 1992001 |
+| QUESTION | 199000005 | Q5 启用 Sentinel 后复测 | 全新目标，预初始化用户 1992001 |
+
+- Q2 的 10/20/30 QPS 点赞轮使用互不重叠的令牌区间，确保绝大多数请求是首次点赞。10 QPS 轮 607 个样本中有 7 个因令牌回收重复点赞（1.15%），均返回 `changed=false`，没有计数膨胀；20 QPS 两轮和 30 QPS 轮没有重复点赞主导。50 QPS 轮改用全新的 Q4，避免 Q2 已点赞用户影响结果。
+- 取消点赞轮从 Q2/Q4 的已点赞集合中取令牌，并以实际计数下降核对有效取消。20 QPS 首轮曾混入前序点赞轮未消费的令牌，1,167 个样本中只有 840 次有效取消，327 次是 `changed=false`；该轮标记为污染轮，不用于容量结论，换用确定已点赞的 D 区间重跑。
+- 指标口径与 Stage B/C 相同：实际 QPS = 样本数 / JTL 实际时间窗；P90/P95/P99 为全量样本 nearest-rank；Error% 包含 429 和 503；成功 QPS 只统计 HTTP 200。CPU/load 由虚拟机 `/proc/stat` 和 `/proc/loadavg` 采样，不使用 Prometheus。
+
+### D.2 点赞裸容量（Sentinel flow 关闭）
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 | 429 | 503 | 成功 QPS |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 20 | 607 | 10.236 | 102.4% | 274 | 772 | 993 | 1,344 | 1,766 | 0 | 607 | 0 | 0 | 10.236 |
+| 20（首轮） | 30 | 930 | 13.996 | 70.0% | 1,351 | 2,580 | 4,063 | 14,612 | 14,966 | 4.839% | 885 | 0 | 45 | 13.364 |
+| 20（重跑） | 30 | 1,148 | 19.331 | 96.7% | 471 | 986 | 1,263 | 4,168 | 5,204 | 0.087% | 1,147 | 0 | 1 | 19.315 |
+| 30 | 60 | 1,739 | 29.070 | 96.9% | 1,253 | 2,399 | 2,629 | 3,132 | 3,839 | 0 | 1,739 | 0 | 0 | 29.070 |
+| 50 | 100 | 1,496 | 24.021 | 48.0% | 3,859 | 7,339 | 8,760 | 15,325 | 18,167 | 14.84% | 1,274 | 0 | 222 | 20.457 |
+
+10 QPS 是最后完全稳定点：0 个 503、P95 993 ms，整机 CPU 平均 75.3%、峰值 100%，load 最高 11.41。20 QPS 首轮在 02:34:21–02:35:08 出现 45 个 503，全部是 `QueryTimeoutException: Redis command timed out`；Redis slowlog 记录到 flush 锁 `EVALSHA` 59 秒、`INFO` 22.6 秒、`GET` 13.9 秒、`SCRIPT LOAD` 19 秒，整机 CPU 平均 85.8%、峰值 99.9%，load 最高 13.00。该轮实际只完成 13.996 QPS，900 次点赞已生效（其中 15 个 503 在 Lua 成功后返回），Q2 从 601 增至 1,501，数据没有丢失；失败轮保留，不隐藏。
+
+20 QPS 重跑提升到 19.331 QPS，仍有 1 个 Redis 超时 503（02:39:03），Q2 从 1,501 增至 2,649，与 1,148 次受理一致。该轮没有采集到机器 CPU，原因是后台统计进程未拿到 `VM_PASSWORD` 而退出；不补造数据，CPU 证据使用首轮 85.8%/99.9% 和 30 QPS 轮 87.6%/100% 作为区间参考。30 QPS 虽然 0 错误、实际 29.070 QPS，但 CPU 平均 87.6%、多数采样接近 100%，load 最高 20.93，P95 已到 2.6 秒，不能算稳定点。50 QPS 明显崩溃：实际 24.021 QPS、222 个 503（14.84%）、成功吞吐 20.457 QPS、P95 8.76 秒，CPU 平均 90.8%、峰值 100%，load 最高 23.76。点赞拐点在 20–30 QPS，峰值约 29 QPS；瓶颈是共享 2 vCPU、Redis 与 flush 的整机调度，不是 Lua 业务错误。
+
+### D.3 community-like 阈值
+
+**community-like = 8 QPS/实例**。最后完全稳定点是 10 QPS，取 80% 得 8 QPS；10 QPS 时整机 CPU 已平均 75.3%、峰值 100%，20 QPS 重跑仍有 Redis 超时，30 QPS 虽然零错误但 CPU 长期接近打满且 P95 2.6 秒，50 QPS 出现 14.84% 的 503。8 QPS 为同一 VM 上的 flush、Nacos、Gateway 和其它业务实例保留余量，也与 learning-progress-report 的“稳定点 80%”取法一致。该值是每个 community JVM 的本地 FlowRule，不是集群总量。
+
+### D.4 幂等与取消点赞裸容量
+
+同一用户对 A2 连续两次点赞：第一次 `changed=true`，计数 0→1、users 集合 1 个成员；第二次 `changed=false`，计数仍为 1、users 仍为 1。随后连续两次取消：第一次 1→0，第二次 `changed=false`，计数保持 0，没有出现负数。最终 Redis count=0、users=0、revision=6，MySQL `like_count`=0、有效关系 0、取消关系 1。重复请求只返回幂等结果，不产生重复有效关系。
+
+| 目标 QPS | 线程 | 时长 s | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 | 429 | 503 | 成功 QPS |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | 20 | 59.3 | 611 | 10.300 | 103.0% | 165 | 309 | 553 | 1,285 | 1,485 | 0 | 611 | 0 | 0 | 10.300 |
+| 20（污染轮） | 30 | 59.7 | 1,167 | 19.555 | 97.8% | 417 | 938 | 1,283 | 3,367 | 3,693 | 0 | 1,167 | 0 | 0 | 19.555 |
+| 20（重跑） | 30 | 60.4 | 1,190 | 19.702 | 98.5% | 283 | 533 | 1,043 | 2,717 | 2,983 | 0 | 1,190 | 0 | 0 | 19.702 |
+| 30 | 40 | 34.7 | 1,023 | 29.464 | 98.2% | 531 | 1,099 | 1,348 | 1,700 | 2,019 | 0 | 1,023 | 0 | 0 | 29.464 |
+| 50 | 80 | 25.6 | 927 | 36.221 | 72.4% | 1,921 | 3,338 | 3,639 | 4,483 | 5,276 | 0 | 927 | 0 | 0 | 36.221 |
+
+10 QPS 轮 611 次全部有效，Q2 从 4,388 精确降到 3,777；20 QPS 重跑 1,190 次全部有效，Q2 从 2,937 降到 1,747；30 QPS 轮 1,023 次全部有效，Q2 从 1,747 降到 724。30 QPS 轮只跑 34.7 秒，是为了在 Q2 已点赞池耗尽前完成；50 QPS 轮只跑 25.6 秒，是在 Q4 的 1,394 个已点赞用户内完成，避免退化成未点赞快路径。50 QPS 虽然 0 错误，但只达到目标的 72.4%，P95 3.64 秒，CPU 平均 85.0%、峰值 100%，load 最高 18.55，吞吐平台约 36.2 QPS。取消点赞的 10/20/30 QPS 均无 5xx、无超时，稳定点至少到 30 QPS；50 QPS 是明显拐点，峰值约 36.2 QPS，但 30 QPS 已把 CPU 推到高位。
+
+**community-unlike = 8 QPS/实例**。取消点赞裸容量在 30 QPS 仍无错误，但它与点赞共享 JVM、Redis、Lua、dirty 集合和 MySQL flush 路径；若取消点赞单独放宽到 20–30 QPS，会与点赞流量争抢同一 Redis/连接池并放大超时。按点赞稳定点 10 QPS 的 80% 统一取 8 QPS，降低两条写路径互相挤压的风险；这是保护阈值，不是取消点赞的最大能力。最终 Nacos 与 Git 文件同时包含两条规则：
+
+```json
+[
+  {"resource":"community-like","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0},
+  {"resource":"community-unlike","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0}
+]
+```
+
+规则通过 Nacos v1 API 发布到 namespace `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `community-service-sentinel-flow-dev.json`，发布和读回内容一致；community-service 在 02:54:52 收到 `ConfigChangeNotifyRequest`，02:54:53 完成 `NacosDataSource` 刷新。本地 `config/nacos/community-service-sentinel-flow-dev.json` 与 Nacos 内容一致。
+
+### D.5 开启 Sentinel 后点赞复测
+
+| 负载 | 线程 | 样本 | 实际 QPS | 200 | 429 | 429 占比 | 成功 QPS | 总 P95 ms | 成功 P95 ms | 503 | timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6（0.75T，20 线程） | 20 | 374 | 6.307 | 329 | 45 | 12.03% | 5.548 | 337 | 347 | 0 | 0 |
+| 6（0.75T，6 线程） | 6 | 361 | 6.093 | 360 | 1 | 0.28% | 6.076 | 234 | 234 | 0 | 0 |
+| 8（1.0T） | 8 | 453 | 7.640 | 433 | 20 | 4.42% | 7.303 | 802 | 916 | 0 | 0 |
+| 12（1.5T） | 12 | 702 | 11.830 | 466 | 236 | 33.62% | 7.853 | 967 | 1,223 | 0 | 0 |
+| 16（2.0T） | 16 | 939 | 15.831 | 475 | 464 | 49.41% | 8.014 | 981 | 1,300 | 0 | 0 |
+
+所有 429 的 `blockType` 都是 `FlowException`，返回 429；全程 0 个 503、0 超时、0 连接拒绝/重置。8 QPS 规则下成功吞吐封顶在约 7.3–8.0 QPS，12 和 16 QPS 的额外流量主要被 429 拒绝，服务保持健康。6 QPS / 20 线程出现 45 个 429（12.03%），同一目标改用 6 线程后只剩 1 个（0.28%），说明是客户端排队后的秒内突发，不是规则误限；该对照轮保留。
+
+### D.6 开启 Sentinel 后取消点赞复测
+
+| 负载 | 线程 | 样本 | 实际 QPS | 200 | 429 | 429 占比 | 成功 QPS | 总 P95 ms | 成功 P95 ms | 503 | timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6（0.75T） | 6 | 361 | 6.090 | 361 | 0 | 0 | 6.090 | 201 | 201 | 0 | 0 |
+| 8（1.0T） | 8 | 471 | 7.946 | 458 | 13 | 2.76% | 7.727 | 1,069 | 1,070 | 0 | 0 |
+| 12（1.5T） | 12 | 721 | 12.159 | 473 | 248 | 34.40% | 7.977 | 388 | 519 | 0 | 0 |
+| 16（2.0T） | 16 | 957 | 16.134 | 476 | 481 | 50.26% | 8.057 | 305 | 551 | 0 | 0 |
+
+取消点赞的成功吞吐同样封顶在约 8.0–8.1 QPS，超额流量为 429，0 个 503、0 超时。12 QPS 轮有 721 个样本但只有 720 个令牌，JMeter 回收令牌造成 1 次重复取消（`changed=false`）；这使 Q5 最终有效数比“每个令牌只取消一次”的预期多 1，属于测试令牌复用，不是计数错误，保留并在此说明。
+
+### D.7 最终一致性与健康检查
+
+等待全部 dirty 刷完后核对专用目标：
+
+| 目标 | Redis count | Redis users | Redis revision | MySQL like_count | 有效关系 | 取消关系 | dirty |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Q2 199000002 | 724 | 724 | 8,052 | 724 | 724 | 3,664 | 0 |
+| Q3 199000003 | 45 | 45 | 45 | 45 | 45 | 0 | 0 |
+| Q4 199000004 | 467 | 467 | 2,321 | 467 | 467 | 927 | 0 |
+| Q5 199000005 | 297 | 297 | 3,831 | 297 | 297 | 1,767 | 0 |
+| A2 199000002 | 0 | 0 | 6 | 0 | 0 | 1 | 0 |
+
+每个目标都满足 Redis count = Redis users = MySQL like_count = 有效关系数；没有重复有效关系，没有 0/1 之外的 status，没有负 like_count，dirty 集合为 0。点赞裸容量首轮和 50 QPS 轮的 503 没有留下脏数据：Q2 与 Q4 的最终计数都由 Redis users 集合驱动并在 flush 后对齐 MySQL。过去 1 小时 community 日志有 269 条 `like Redis unavailable` 和 1 条 `like flush failed`，对应 1 条 warm-up、45 条 20 QPS 首轮、1 条 20 QPS 重跑和 222 条 50 QPS 点赞，全部发生在流控关闭的裸容量/预热轮次；启用规则后的复测 0 个 503，最近 15 分钟对应日志为 0。community-service 容器重启次数为 0，14 个容器均为 healthy，Sentinel Dashboard HTTP 200。
+
+### D.8 异常、工具问题与限制
+
+- 20 QPS 点赞首轮 45 个 503、20 QPS 重跑 1 个 503、50 QPS 点赞 222 个 503 均保留在表中。根因是 2 vCPU VM 在 flush revision churn 和高并发下把 Redis 进程长时间调度出去，Lettuce 2 秒超时返回 503；不是 Lua 返回业务失败。
+- 取消点赞 50 QPS 的前两次尝试（02:52:08、02:52:47）在 3 秒内结束且没有 JTL 样本。原因是直接传给 JMeter 的 CSV 令牌路径是相对路径，JMeter 按 JMX 所在目录解析后无法打开文件；改用绝对路径后 02:53:29 正常执行。两次 0 样本轮次不是压测结果，不纳入容量表。
+- 20 QPS 点赞重跑没有 CPU CSV（统计进程缺少 `VM_PASSWORD` 环境变量）；文中明确使用相邻轮次的 CPU 数据作参考，没有补造该轮采样。
+- 30 QPS 取消和 50 QPS 取消分别为 34.7 秒、25.6 秒，原因是专用已点赞用户池有限；两轮的成功数与计数下降一致，不能把其“目标 QPS 达成率”直接外推到 60 秒稳态。
+- 整机只有 2 vCPU、约 3.7 GiB 内存、2.5 GiB swap，14 个容器同时运行；点赞 50 QPS 时 load 23.76、CPU 100%。绝对容量和阈值只适用于当前单实例共享 VM，不能外推到生产；换机器、换实例数必须重测。
+- 本阶段只清理/使用专用基准目标与用户，没有 TRUNCATE、没有无 WHERE 的 DELETE、没有删除数据卷；未改业务代码、未改旧阈值。回退时将 Nacos 与本地 community flow 恢复为 `[]` 即关闭两条规则。原始 JTL、summary 和 CPU CSV 保存在被 Git 忽略的 `scripts/sentinel-benchmark/results/`，不提交。
