@@ -6,6 +6,8 @@ import com.campustrain.authservice.security.LoginUser;
 import com.campustrain.authservice.service.AuthService;
 import com.campustrain.authservice.util.JwtTokenProvider;
 import com.campustrain.authservice.vo.LoginVO;
+import com.campustrain.authservice.vo.TokenInfoVO;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
@@ -53,5 +56,29 @@ public class AuthServiceImpl implements AuthService {
             log.warn("login failed, username={}", dto.getUsername());
             throw new BusinessException(401, "用户名或密码错误");
         }
+    }
+
+    @Override
+    public TokenInfoVO getTokenInfo(String authorization) {
+        String token = resolveBearerToken(authorization);
+        Claims claims = jwtTokenProvider.parseToken(token);
+
+        TokenInfoVO vo = new TokenInfoVO();
+        Object userId = claims.get("userId");
+        if (userId instanceof Number number) {
+            vo.setUserId(number.longValue());
+        } else {
+            vo.setUserId(Long.valueOf(String.valueOf(userId)));
+        }
+        vo.setUsername(claims.getSubject());
+        vo.setRole(claims.get("role", String.class));
+        return vo;
+    }
+
+    private String resolveBearerToken(String authorization) {
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+            throw new BusinessException(401, "Token缺失");
+        }
+        return authorization.substring(7);
     }
 }

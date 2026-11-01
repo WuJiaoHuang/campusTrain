@@ -22,11 +22,11 @@ public interface LessonService extends IService<Lesson> {
 
     void sortLessons(List<LessonSortDTO> dtoList);
 
-    void deleteLesson(Long id);
+    void deleteLesson(Long lessonId);
 
-    VideoUploadVO createUploadUrl(VideoUploadDTO dto);
+    VideoUploadVO createVideoUploadUrl(VideoUploadDTO dto);
 
-    void bindVideo(Long id, VideoBindDTO dto);
+    void bindVideo(Long lessonId, VideoBindDTO dto);
 
-    VideoPlayVO createPlayUrl(Long id);
+    VideoPlayVO getLessonPlayUrl(Long lessonId);
 }

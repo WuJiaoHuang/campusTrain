@@ -157,15 +157,15 @@ class Stage12EnrollmentTest {
     }
 
     @Test void rosterChecksRoleAndOwnership() {
-        assertThrows(BusinessException.class, () -> service.trainingEnrollments(2L, 1, 10, null));
+        assertThrows(BusinessException.class, () -> service.getTrainingEnrollments(2L, 1, 10, null));
         UserContext.set(1L, "TEACHER", "teacher", "trace"); user.setRole("TEACHER");
-        assertThrows(BusinessException.class, () -> service.trainingEnrollments(2L, 1, 10, null));
+        assertThrows(BusinessException.class, () -> service.getTrainingEnrollments(2L, 1, 10, null));
         training.setTeacherId(1L);
         doReturn(new Page<Enrollment>(1, 10, 0)).when(service).page(any(Page.class), any(Wrapper.class));
-        assertEquals(0, service.trainingEnrollments(2L, 1, 10, null).getTotal());
+        assertEquals(0, service.getTrainingEnrollments(2L, 1, 10, null).getTotal());
         UserContext.set(1L, "ADMIN", "admin", "trace"); user.setRole("ADMIN"); training.setTeacherId(3L);
-        assertEquals(0, service.trainingEnrollments(2L, 1, 10, null).getTotal());
-        assertEquals(0, service.myEnrollments(1, 10, 1).getTotal());
+        assertEquals(0, service.getTrainingEnrollments(2L, 1, 10, null).getTotal());
+        assertEquals(0, service.getMyEnrollments(1, 10, 1).getTotal());
     }
 
     private Enrollment record(int status) {

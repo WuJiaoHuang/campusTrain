@@ -58,9 +58,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
-    public UserVO getUserDetail(Long id) {
-        User user = getExistingUser(id);
-        log.info("user detail queried, traceId={}, userId={}", TraceIdContext.get(), id);
+    public UserVO getUserDetail(Long userId) {
+        User user = getExistingUser(userId);
+        log.info("user detail queried, traceId={}, userId={}", TraceIdContext.get(), userId);
         return convertToVO(user);
     }
 
@@ -105,10 +105,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteUser(Long id) {
-        getExistingUser(id);
-        removeById(id);
-        log.info("user deleted, userId={}", id);
+    public void deleteUser(Long userId) {
+        getExistingUser(userId);
+        removeById(userId);
+        log.info("user deleted, userId={}", userId);
     }
 
     @Override
@@ -116,8 +116,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username), false);
     }
 
-    private User getExistingUser(Long id) {
-        User user = getById(id);
+    private User getExistingUser(Long userId) {
+        User user = getById(userId);
         if (user == null) {
             throw new BusinessException("用户不存在");
         }

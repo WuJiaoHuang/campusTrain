@@ -16,7 +16,7 @@ public class GrowthJob {
     public void updateSeasonSettled() {
         String season = XxlJobHelper.getJobParam();
         try {
-            growthService.settle(season);
+            growthService.settleSeason(season);
             log.info("XXL-JOB season settlement finished, season={}", season);
         } catch (RuntimeException exception) {
             log.error("XXL-JOB season settlement failed, season={}", season, exception);
@@ -28,7 +28,7 @@ public class GrowthJob {
     public void rebuildRanking() {
         String month = XxlJobHelper.getJobParam();
         try {
-            growthService.rebuild(month);
+            growthService.rebuildRankings(month);
             log.info("XXL-JOB ranking rebuild finished, month={}", month);
         } catch (RuntimeException exception) {
             log.error("XXL-JOB ranking rebuild failed, month={}", month, exception);

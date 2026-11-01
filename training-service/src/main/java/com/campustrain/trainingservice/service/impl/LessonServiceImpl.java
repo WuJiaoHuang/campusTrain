@@ -118,16 +118,16 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteLesson(Long id) {
-        Lesson lesson = getExistingLesson(id);
-        if (!removeById(id)) throw new BusinessException("删除课时失败");
+    public void deleteLesson(Long lessonId) {
+        Lesson lesson = getExistingLesson(lessonId);
+        if (!removeById(lessonId)) throw new BusinessException("删除课时失败");
         CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
         cleanupAfterCommit(lesson.getId(), lesson.getVideoObjectKey());
         log.info("lesson deleted, lessonId={}", lesson.getId());
     }
 
     @Override
-    public VideoUploadVO createUploadUrl(VideoUploadDTO dto) {
+    public VideoUploadVO createVideoUploadUrl(VideoUploadDTO dto) {
         validateVideo(dto.getSize(), dto.getContentType());
         if (!StringUtils.hasText(dto.getFileName()) || dto.getFileName().contains("/") || dto.getFileName().contains("\\")) {
             throw new BusinessException("文件名无效");
@@ -146,8 +146,8 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void bindVideo(Long id, VideoBindDTO dto) {
-        Lesson lesson = getOne(new LambdaQueryWrapper<Lesson>().eq(Lesson::getId, id).last("FOR UPDATE"));
+    public void bindVideo(Long lessonId, VideoBindDTO dto) {
+        Lesson lesson = getOne(new LambdaQueryWrapper<Lesson>().eq(Lesson::getId, lessonId).last("FOR UPDATE"));
         if (lesson == null) throw new BusinessException("课时不存在");
         if (!Integer.valueOf(0).equals(lesson.getLessonType())) throw new BusinessException("非视频课时不能绑定视频");
         if (dto.getObjectKey() == null || !dto.getObjectKey().matches("campustrain/videos/[0-9]{4}/[0-9]{2}/[a-f0-9]{32}\\.(mp4|webm|mov)")) {
@@ -168,13 +168,13 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
         lesson.setUpdateTime(LocalDateTime.now());
         if (!updateById(lesson)) throw new BusinessException("视频绑定失败");
         CacheInvalidationSupport.afterCommit(() -> evictCatalogForChapter(lesson.getChapterId()));
-        if (!dto.getObjectKey().equals(oldKey)) cleanupAfterCommit(id, oldKey);
-        log.info("video bound, traceId={}, lessonId={}, objectKey={}, size={}, contentType={}", TraceIdContext.get(), id, dto.getObjectKey(), dto.getSize(), dto.getContentType());
+        if (!dto.getObjectKey().equals(oldKey)) cleanupAfterCommit(lessonId, oldKey);
+        log.info("video bound, traceId={}, lessonId={}, objectKey={}, size={}, contentType={}", TraceIdContext.get(), lessonId, dto.getObjectKey(), dto.getSize(), dto.getContentType());
     }
 
     @Override
-    public VideoPlayVO createPlayUrl(Long id) {
-        Lesson lesson = getExistingLesson(id);
+    public VideoPlayVO getLessonPlayUrl(Long lessonId) {
+        Lesson lesson = getExistingLesson(lessonId);
         if (!Integer.valueOf(0).equals(lesson.getLessonType())) throw new BusinessException("非视频课时不能播放视频");
         if (!StringUtils.hasText(lesson.getVideoObjectKey())) throw new BusinessException("课时未绑定视频");
         Instant expiry = Instant.now().plusSeconds(ossProperties.getPlayExpireSeconds());
@@ -217,8 +217,8 @@ public class LessonServiceImpl extends ServiceImpl<LessonMapper, Lesson> impleme
         }
     }
 
-    private Lesson getExistingLesson(Long id) {
-        Lesson lesson = getById(id);
+    private Lesson getExistingLesson(Long lessonId) {
+        Lesson lesson = getById(lessonId);
         if (lesson == null) {
             throw new BusinessException("课时不存在");
         }

@@ -22,12 +22,12 @@ Gateway 校验 JWT 并覆盖身份 Header；learning-service 使用请求上下�
 
 | 方法和路径 | 作用 |
 | --- | --- |
-| POST `/learning/start/{id}` | 视频信息、短期播放地址、最高有效断点 |
-| POST `/learning/report-progress/{id}` | 请求体 `{"progressSeconds":30}`，报告视频进度 |
-| GET `/learning/get-progress/{id}` | 查询进度；Redis 不可用时可读取已持久化值 |
-| POST `/learning/complete/{id}` | 幂等完成图文课时 |
-| GET `/learning/get/chapter-progress/{id}` | 章节完成度 |
-| GET `/learning/get/training-progress/{id}` | 培训完成度 |
+| POST `/learning/start/{lessonId}` | 视频信息、短期播放地址、最高有效断点 |
+| POST `/learning/report-progress/{lessonId}` | 请求体 `{"progressSeconds":30}`，报告视频进度 |
+| GET `/learning/get-progress/{lessonId}` | 查询进度；Redis 不可用时可读取已持久化值 |
+| POST `/learning/complete/{lessonId}` | 幂等完成图文课时 |
+| GET `/learning/get/chapter-progress/{chapterId}` | 章节完成度 |
+| GET `/learning/get/training-progress/{trainingId}` | 培训完成度 |
 
 视频必须已经通过 Stage11 绑定真实对象且时长大于零；非视频不能获取播放地址。学习服务不持有 OSS AccessKey，不保存永久播放 URL。新建的学生学习记录与测试数据不改变其他阶段表结构。
 

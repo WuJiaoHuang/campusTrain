@@ -55,7 +55,7 @@ class LearningControllerTest {
     @FunctionalInterface interface ThrowingAction { void run() throws Exception; }
 
     @Test void startReturnsPrivateUrlAndResume() throws Exception {
-        when(store.read(1L, video, "test")).thenReturn(Map.of("progressSeconds", "30", "completed", "0"));
+        when(store.readProgress(1L, video, "test")).thenReturn(Map.of("progressSeconds", "30", "completed", "0"));
         when(training.getLessonPlayUrl(9L)).thenReturn(new RemoteResult<>(200, "success", new PlayUrl("signed", Instant.parse("2030-01-01T00:00:00Z"))));
         asStudent(() -> { var result = controller.startLearning(9L).data(); assertEquals(30, result.resumePositionSeconds()); assertEquals("signed", result.playUrl()); });
     }
@@ -71,7 +71,7 @@ class LearningControllerTest {
     }
     @Test void invalidProgressDoesNotReachRedis() throws Exception {
         asStudent(() -> assertEquals(400, assertThrows(LearningFailure.class, () -> controller.updateLearningProgress(9L, new ProgressRequest(101))).getCode()));
-        verify(store, never()).update(anyLong(), any(), anyInt(), anyDouble(), any());
+        verify(store, never()).updateProgress(anyLong(), any(), anyInt(), anyDouble(), any());
     }
     @Test void failedEnrollmentDependencyNeverStarts() throws Exception {
         when(enrollment.isEnrollmentActive(5L, 1L)).thenReturn(new RemoteResult<>(503, "down", null));
@@ -97,8 +97,8 @@ class LearningControllerTest {
     @Test void textCompletionUsesAuthenticatedIdentityAndIsIdempotent() throws Exception {
         var text = new Lesson(9L, 1, null, 3L, 4L, 5L, false);
         when(training.getLessonById(9L)).thenReturn(new RemoteResult<>(200, "success", text));
-        when(store.complete(1L, text, "test")).thenReturn(1L, 0L);
+        when(store.completeLesson(1L, text, "test")).thenReturn(1L, 0L);
         asStudent(() -> { assertEquals(200, controller.completeTextLesson(9L).code()); assertEquals(200, controller.completeTextLesson(9L).code()); });
-        verify(store, times(2)).complete(1L, text, "test");
+        verify(store, times(2)).completeLesson(1L, text, "test");
     }
 }

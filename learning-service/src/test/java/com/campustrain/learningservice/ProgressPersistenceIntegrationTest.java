@@ -106,16 +106,16 @@ class ProgressPersistenceIntegrationTest {
         LettuceConnectionFactory factory = new LettuceConnectionFactory(config);
         factory.afterPropertiesSet(); factory.start();
         StringRedisTemplate redis = new StringRedisTemplate(factory); redis.afterPropertiesSet();
-        String key = LearningProgressStore.key(TEST_USER, TEST_LESSON);
+        String key = LearningProgressStore.progressKey(TEST_USER, TEST_LESSON);
         try {
             redis.delete(key);
             LearningProgressStore actual = new LearningProgressStore(redis, learningRecordMapper, learningOutboxMapper, tx, new ObjectMapper(), 100);
             Lesson lesson = new Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
-            assertEquals("0", actual.peek(TEST_USER, lesson, "test").get("progressSeconds"));
+            assertEquals("0", actual.peekProgress(TEST_USER, lesson, "test").get("progressSeconds"));
             assertFalse(Boolean.TRUE.equals(redis.hasKey(key)));
             assertFalse(Boolean.TRUE.equals(redis.opsForSet().isMember(LearningProgressStore.DIRTY, TEST_USER + ":" + TEST_LESSON)));
             save(95, 1);
-            Map<Object, Object> recovered = actual.read(TEST_USER, lesson, "test");
+            Map<Object, Object> recovered = actual.readProgress(TEST_USER, lesson, "test");
             assertEquals("95", recovered.get("progressSeconds"));
             assertEquals("1", recovered.get("completed"));
             assertNotNull(recovered.get("firstStartTime"));
@@ -134,7 +134,7 @@ class ProgressPersistenceIntegrationTest {
         config.setPassword(System.getenv().getOrDefault("REDIS_PASSWORD", "123456"));
         LettuceConnectionFactory factory = new LettuceConnectionFactory(config); factory.afterPropertiesSet(); factory.start();
         StringRedisTemplate redis = new StringRedisTemplate(factory); redis.afterPropertiesSet();
-        String key = LearningProgressStore.key(TEST_USER, TEST_LESSON), member = TEST_USER + ":" + TEST_LESSON;
+        String key = LearningProgressStore.progressKey(TEST_USER, TEST_LESSON), member = TEST_USER + ":" + TEST_LESSON;
         try {
             Assumptions.assumeTrue(Long.valueOf(0).equals(redis.opsForSet().size(LearningProgressStore.DIRTY)), "dirty set must be empty for isolation");
             redis.delete(key);
@@ -147,12 +147,12 @@ class ProgressPersistenceIntegrationTest {
             MockMvc mvc = MockMvcBuilders.standaloneSetup(new LearningController(new LearningServiceImpl(training, enrollment, actual, 0.9)))
                     .addFilters(new RequestIdentity()).build();
             for (int i = 1; i <= 10; i++) {
-                mvc.perform(post("/learning/report-progress/{id}", TEST_LESSON).header("X-User-Id", TEST_USER)
+                mvc.perform(post("/learning/report-progress/{lessonId}", TEST_LESSON).header("X-User-Id", TEST_USER)
                         .header("X-User-Role", "STUDENT").contentType("application/json")
                         .content("{\"progressSeconds\":" + i + "}")).andExpect(status().isOk());
             }
             verify(counted, never()).upsertProgress(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyInt(), any(), any(), any(), any(), any());
-            actual.flush();
+            actual.flushDirtyProgress();
             verify(counted, times(1)).upsertProgress(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyInt(), any(), any(), nullable(java.time.LocalDateTime.class), any(), any());
             assertEquals(10, jdbc.queryForObject("SELECT progress_seconds FROM learning_record WHERE user_id=? AND lesson_id=?", Integer.class, TEST_USER, TEST_LESSON));
             assertFalse(Boolean.TRUE.equals(redis.opsForSet().isMember(LearningProgressStore.DIRTY, member)));

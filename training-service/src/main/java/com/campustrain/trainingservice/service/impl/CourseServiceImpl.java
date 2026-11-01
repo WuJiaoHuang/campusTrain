@@ -66,8 +66,8 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
     }
 
     @Override
-    public CourseVO getCourseDetail(Long id) {
-        return convertToVO(getExistingCourse(id));
+    public CourseVO getCourseDetail(Long courseId) {
+        return convertToVO(getExistingCourse(courseId));
     }
 
     @Override
@@ -84,15 +84,15 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteCourse(Long id) {
-        Course course = getExistingCourse(id);
-        Long chapterCount = chapterMapper.selectCount(new LambdaQueryWrapper<Chapter>().eq(Chapter::getCourseId, id));
+    public void deleteCourse(Long courseId) {
+        Course course = getExistingCourse(courseId);
+        Long chapterCount = chapterMapper.selectCount(new LambdaQueryWrapper<Chapter>().eq(Chapter::getCourseId, courseId));
         if (chapterCount > 0) {
-            log.warn("course delete rejected, courseId={}, chapterCount={}", id, chapterCount);
+            log.warn("course delete rejected, courseId={}, chapterCount={}", courseId, chapterCount);
             throw new BusinessException("课程下存在章节，无法删除");
         }
 
-        removeById(id);
+        removeById(courseId);
         CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictCatalog(course.getTrainingId()));
         log.info("course deleted, courseId={}", course.getId());
     }
@@ -104,8 +104,8 @@ public class CourseServiceImpl extends ServiceImpl<CourseMapper, Course> impleme
         }
     }
 
-    private Course getExistingCourse(Long id) {
-        Course course = getById(id);
+    private Course getExistingCourse(Long courseId) {
+        Course course = getById(courseId);
         if (course == null) {
             throw new BusinessException("课程不存在");
         }

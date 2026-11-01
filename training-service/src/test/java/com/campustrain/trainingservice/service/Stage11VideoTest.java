@@ -64,15 +64,15 @@ class Stage11VideoTest {
         dto.setFileName("x.mp4");
         dto.setContentType("image/png");
         dto.setSize(10L);
-        assertThrows(BusinessException.class, () -> service.createUploadUrl(dto));
+        assertThrows(BusinessException.class, () -> service.createVideoUploadUrl(dto));
         dto.setContentType("video/mp4");
         dto.setSize(0L);
-        assertThrows(BusinessException.class, () -> service.createUploadUrl(dto));
+        assertThrows(BusinessException.class, () -> service.createVideoUploadUrl(dto));
         dto.setSize(524288001L);
-        assertThrows(BusinessException.class, () -> service.createUploadUrl(dto));
+        assertThrows(BusinessException.class, () -> service.createVideoUploadUrl(dto));
         dto.setSize(10L);
         dto.setFileName("../x.mp4");
-        assertThrows(BusinessException.class, () -> service.createUploadUrl(dto));
+        assertThrows(BusinessException.class, () -> service.createVideoUploadUrl(dto));
         verifyNoInteractions(oss);
     }
 
@@ -83,7 +83,7 @@ class Stage11VideoTest {
         dto.setContentType("video/mp4");
         dto.setSize(100L);
         when(oss.generateUploadUrl(anyString(), eq("video/mp4"), any())).thenReturn("signed-put");
-        var result = service.createUploadUrl(dto);
+        var result = service.createVideoUploadUrl(dto);
         assertTrue(result.objectKey().matches("campustrain/videos/[0-9]{4}/[0-9]{2}/[a-f0-9]{32}\\.mp4"));
         assertFalse(result.objectKey().contains("private-source"));
         assertEquals("signed-put", result.uploadUrl());
@@ -146,10 +146,10 @@ class Stage11VideoTest {
 
     @Test
     void playUrlRequiresBoundVideo() {
-        assertThrows(BusinessException.class, () -> service.createPlayUrl(1L));
+        assertThrows(BusinessException.class, () -> service.getLessonPlayUrl(1L));
         lesson.setVideoObjectKey(KEY);
         when(oss.generatePlayUrl(eq(KEY), any())).thenReturn("signed");
-        assertEquals("signed", service.createPlayUrl(1L).playUrl());
+        assertEquals("signed", service.getLessonPlayUrl(1L).playUrl());
     }
 
     @Test

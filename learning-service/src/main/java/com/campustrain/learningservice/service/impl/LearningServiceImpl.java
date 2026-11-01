@@ -32,24 +32,24 @@ public class LearningServiceImpl implements LearningService {
     private final TrainingClient trainingClient;
     private final EnrollmentClient enrollmentClient;
     private final LearningProgressStore learningProgressStore;
-    private final double ratio;
+    private final double completeRatio;
 
     public LearningServiceImpl(TrainingClient trainingClient, EnrollmentClient enrollmentClient, LearningProgressStore learningProgressStore,
-                           @Value("${campustrain.learning.complete-ratio:0.90}") double ratio) {
-        if (ratio <= 0 || ratio > 1) {
+                           @Value("${campustrain.learning.complete-ratio:0.90}") double completeRatio) {
+        if (completeRatio <= 0 || completeRatio > 1) {
             throw new IllegalArgumentException("invalid learning complete ratio");
         }
         this.trainingClient = trainingClient;
         this.enrollmentClient = enrollmentClient;
         this.learningProgressStore = learningProgressStore;
-        this.ratio = ratio;
+        this.completeRatio = completeRatio;
     }
 
     public LearningStartVO startLearning(Long lessonId) {
         long userId = userId();
         Lesson lesson = authorizedLesson(userId, lessonId);
         requireVideo(lesson);
-        Map<Object, Object> state = redisCall(userId, lesson, () -> learningProgressStore.read(userId, lesson, traceId()));
+        Map<Object, Object> state = redisCall(userId, lesson, () -> learningProgressStore.readProgress(userId, lesson, traceId()));
         PlayUrl url = required(trainingClient.getLessonPlayUrl(lessonId), "视频播放地址不可用");
         log.info("learning started, traceId={}, userId={}, trainingId={}, lessonId={}", traceId(), userId,
                 lesson.trainingId(), lessonId);
@@ -64,7 +64,7 @@ public class LearningServiceImpl implements LearningService {
         if (progressSeconds > lesson.videoDuration()) {
             throw new LearningFailure(400, "学习进度超过视频时长");
         }
-        long result = redisCall(userId, lesson, () -> learningProgressStore.update(userId, lesson, progressSeconds, ratio, traceId()));
+        long result = redisCall(userId, lesson, () -> learningProgressStore.updateProgress(userId, lesson, progressSeconds, completeRatio, traceId()));
         if (result == 0) {
             log.debug("old learning progress ignored, traceId={}, userId={}, lessonId={}", traceId(), userId, lessonId);
         }
@@ -72,18 +72,18 @@ public class LearningServiceImpl implements LearningService {
             log.info("lesson first completed in Redis, traceId={}, userId={}, trainingId={}, lessonId={}", traceId(),
                     userId, lesson.trainingId(), lessonId);
         }
-        return view(lessonId, redisCall(userId, lesson, () -> learningProgressStore.read(userId, lesson, traceId())));
+        return view(lessonId, redisCall(userId, lesson, () -> learningProgressStore.readProgress(userId, lesson, traceId())));
     }
 
     public LearningProgressVO getLearningProgress(Long lessonId) {
         long userId = userId();
         Lesson lesson = authorizedLesson(userId, lessonId);
         try {
-            return view(lessonId, learningProgressStore.peek(userId, lesson, traceId()));
+            return view(lessonId, learningProgressStore.peekProgress(userId, lesson, traceId()));
         } catch (DataAccessException exception) {
             log.warn("Redis progress unavailable; reading MySQL, traceId={}, userId={}, trainingId={}, lessonId={}",
                     traceId(), userId, lesson.trainingId(), lessonId, exception);
-            Map<String, Object> row = learningProgressStore.persisted(userId, lessonId);
+            Map<String, Object> row = learningProgressStore.readPersistedProgress(userId, lessonId);
             if (row.isEmpty()) {
                 return new LearningProgressVO(lessonId, 0, lesson.videoDuration() == null ? 0 : lesson.videoDuration(),
                         false, null);
@@ -101,7 +101,7 @@ public class LearningServiceImpl implements LearningService {
         if (!Integer.valueOf(1).equals(lesson.lessonType())) {
             throw new LearningFailure(400, "仅图文课时可显式完成");
         }
-        long result = redisCall(userId, lesson, () -> learningProgressStore.complete(userId, lesson, traceId()));
+        long result = redisCall(userId, lesson, () -> learningProgressStore.completeLesson(userId, lesson, traceId()));
         if (result == 1) {
             log.info("text lesson first completed, traceId={}, userId={}, trainingId={}, lessonId={}", traceId(), userId,
                     lesson.trainingId(), lessonId);

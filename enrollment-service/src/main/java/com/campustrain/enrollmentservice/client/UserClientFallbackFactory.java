@@ -11,8 +11,8 @@ import org.springframework.stereotype.Component;
 public class UserClientFallbackFactory implements FallbackFactory<UserClient> {
     @Override
     public UserClient create(Throwable cause) {
-        return id -> {
-            log.error("user Feign fallback, traceId={}, userId={}", UserContext.getTraceId(), id, cause);
+        return userId -> {
+            log.error("user Feign fallback, traceId={}, userId={}", UserContext.getTraceId(), userId, cause);
             return RemoteResult.unavailable("用户服务暂时不可用");
         };
     }

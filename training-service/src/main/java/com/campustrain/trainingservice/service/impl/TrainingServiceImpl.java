@@ -92,11 +92,11 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     }
 
     @Override
-    public TrainingVO getTrainingDetail(Long id) {
+    public TrainingVO getTrainingDetail(Long trainingId) {
         if (trainingFaultProperties.isDelayEnabled()) {
             long delayMs = Math.max(0, trainingFaultProperties.getDelayMs());
             log.warn("Stage10 delay injection, traceId={}, trainingId={}, instance={}, delayMs={}",
-                    TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId(), delayMs);
+                    TraceIdContext.get(), trainingId, trainingInstanceInfo.current().instanceId(), delayMs);
             try {
                 Thread.sleep(delayMs);
             } catch (InterruptedException e) {
@@ -106,31 +106,31 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         }
         if (trainingFaultProperties.isExceptionEnabled()) {
             log.warn("Stage10 exception injection, traceId={}, trainingId={}, instance={}",
-                    TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
+                    TraceIdContext.get(), trainingId, trainingInstanceInfo.current().instanceId());
             throw new TrainingFaultException("Stage10 故障注入：培训详情异常");
         }
-        CacheLookup<TrainingVO> cached = trainingCacheService.get(TrainingCacheKeys.detail(id), id, TrainingVO.class,
+        CacheLookup<TrainingVO> cached = trainingCacheService.getOrLoad(TrainingCacheKeys.detailKey(trainingId), trainingId, TrainingVO.class,
                 trainingCacheServiceDetailTtl(), () -> {
-                    Training training = getById(id);
+                    Training training = getById(trainingId);
                     return training == null ? null : convertToVO(training);
                 });
         if (!cached.found()) throw new BusinessException("培训不存在");
         log.info("training detail queried, traceId={}, trainingId={}, instance={}",
-                TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
+                TraceIdContext.get(), trainingId, trainingInstanceInfo.current().instanceId());
         return cached.value();
     }
 
     @Override
-    public TrainingEnrollmentCheckVO getEnrollmentCheck(Long id) {
+    public TrainingEnrollmentCheckVO getEnrollmentCheck(Long trainingId) {
         Training training = getOne(new LambdaQueryWrapper<Training>()
                 .select(Training::getId, Training::getTeacherId, Training::getStatus, Training::getCapacity, Training::getEnrolledCount,
                         Training::getEnrollStartTime, Training::getEnrollEndTime)
-                .eq(Training::getId, id));
+                .eq(Training::getId, trainingId));
         if (training == null) {
             throw new BusinessException("培训不存在");
         }
         log.info("training enrollment check, traceId={}, trainingId={}, instance={}",
-                TraceIdContext.get(), id, trainingInstanceInfo.current().instanceId());
+                TraceIdContext.get(), trainingId, trainingInstanceInfo.current().instanceId());
         return new TrainingEnrollmentCheckVO(training.getId(), training.getTeacherId(), training.getStatus(), training.getCapacity(),
                 training.getEnrolledCount(), training.getEnrollStartTime(), training.getEnrollEndTime());
     }
@@ -181,17 +181,17 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
     //0：待发布 1：报名中  2：进行中  3：已结束
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void changeStatus(Long id, Integer targetStatus) {
+    public void changeStatus(Long trainingId, Integer targetStatus) {
         if (targetStatus == null || targetStatus < 0 || targetStatus > 3) {
             throw new BusinessException("培训状态不合法");
         }
 
-        Training training = getExistingTraining(id);
+        Training training = getExistingTraining(trainingId);
         Integer oldStatus = training.getStatus();
         if (oldStatus == null || targetStatus != oldStatus + 1) {
             log.warn(
                     "illegal training status transition, trainingId={}, oldStatus={}, targetStatus={}",
-                    id,
+                    trainingId,
                     oldStatus,
                     targetStatus
             );
@@ -204,7 +204,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         CacheInvalidationSupport.afterCommit(() -> trainingCacheService.evictDetail(training.getId()));
         log.info(
                 "training status changed, trainingId={}, oldStatus={}, newStatus={}",
-                id,
+                trainingId,
                 oldStatus,
                 targetStatus
         );
@@ -212,7 +212,7 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
 
     @Override
     public TrainingCatalogVO getTrainingCatalog(Long trainingId) {
-        CacheLookup<TrainingCatalogVO> cached = trainingCacheService.get(TrainingCacheKeys.catalog(trainingId), trainingId,
+        CacheLookup<TrainingCatalogVO> cached = trainingCacheService.getOrLoad(TrainingCacheKeys.catalogKey(trainingId), trainingId,
                 TrainingCatalogVO.class, trainingCacheServiceCatalogTtl(), () -> loadTrainingCatalog(trainingId));
         if (!cached.found()) throw new BusinessException("培训不存在");
         return cached.value();
@@ -283,8 +283,8 @@ public class TrainingServiceImpl extends ServiceImpl<TrainingMapper, Training> i
         return trainingCacheService.catalogTtl();
     }
 
-    private Training getExistingTraining(Long id) {
-        Training training = getById(id);
+    private Training getExistingTraining(Long trainingId) {
+        Training training = getById(trainingId);
         if (training == null) {
             throw new BusinessException("培训不存在");
         }

@@ -32,11 +32,11 @@ public class LearningProgressStore {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
     private final int batchSize;
-    private final DefaultRedisScript<Long> initialize = script("lua/initialize.lua", Long.class);
+    private final DefaultRedisScript<Long> initializeScript = loadScript("lua/initialize.lua", Long.class);
     @SuppressWarnings("rawtypes")
-    private final DefaultRedisScript<List> progress = script("lua/progress.lua", List.class);
-    private final DefaultRedisScript<Long> complete = script("lua/complete.lua", Long.class);
-    private final DefaultRedisScript<Long> clear = script("lua/clear-dirty.lua", Long.class);
+    private final DefaultRedisScript<List> progressScript = loadScript("lua/progress.lua", List.class);
+    private final DefaultRedisScript<Long> completeScript = loadScript("lua/complete.lua", Long.class);
+    private final DefaultRedisScript<Long> clearDirtyScript = loadScript("lua/clear-dirty.lua", Long.class);
 
     public LearningProgressStore(StringRedisTemplate stringRedisTemplate, LearningRecordMapper learningRecordMapper,
                                  LearningOutboxMapper learningOutboxMapper, TransactionTemplate transactionTemplate,
@@ -49,15 +49,15 @@ public class LearningProgressStore {
         this.batchSize = Math.max(1, batchSize);
     }
 
-    public static String key(long userId, long lessonId) {
+    public static String progressKey(long userId, long lessonId) {
         return "campustrain:learning:progress:" + userId + ":" + lessonId;
     }
 
-    private static String member(long userId, long lessonId) {
+    private static String progressMember(long userId, long lessonId) {
         return userId + ":" + lessonId;
     }
 
-    private static <T> DefaultRedisScript<T> script(String path, Class<T> result) {
+    private static <T> DefaultRedisScript<T> loadScript(String path, Class<T> result) {
         DefaultRedisScript<T> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource(path));
         script.setResultType(result);
@@ -72,18 +72,18 @@ public class LearningProgressStore {
      * 4. MySQL 也没有则按 0 进度初始化 Redis，并标记 dirty 等待刷盘；
      * 5. 最后返回 Redis 中完整的学习进度 Hash。
      */
-    public Map<Object, Object> read(long userId, Lesson lesson, String traceId) {
-        String key = key(userId, lesson.lessonId());
+    public Map<Object, Object> readProgress(long userId, Lesson lesson, String traceId) {
+        String key = progressKey(userId, lesson.lessonId());
         Map<Object, Object> values = stringRedisTemplate.opsForHash().entries(key);
         if (!values.isEmpty()) return values;
         List<Map<String, Object>> rows = learningRecordMapper.selectProgress(userId, lesson.lessonId());
         Map<String, Object> row = rows.isEmpty() ? null : rows.get(0);
         int current = row == null ? 0 : ((Number) row.get("progress_seconds")).intValue();
         int duration = row == null ? (lesson.videoDuration() == null ? 0 : lesson.videoDuration()) : ((Number) row.get("duration_seconds")).intValue();
-        int completed = row == null ? 0 : flag(row.get("completed"));
-        LocalDateTime firstStart = row == null ? LocalDateTime.now() : localDateTime(row.get("first_start_time"));
-        String updatedAt = row == null ? Instant.now().toString() : localDateTime(row.get("last_learn_time")).atZone(ZoneId.systemDefault()).toInstant().toString();
-        stringRedisTemplate.execute(initialize, List.of(key, DIRTY), String.valueOf(userId), String.valueOf(lesson.lessonId()),
+        int completed = row == null ? 0 : completedFlag(row.get("completed"));
+        LocalDateTime firstStart = row == null ? LocalDateTime.now() : toLocalDateTime(row.get("first_start_time"));
+        String updatedAt = row == null ? Instant.now().toString() : toLocalDateTime(row.get("last_learn_time")).atZone(ZoneId.systemDefault()).toInstant().toString();
+        stringRedisTemplate.execute(initializeScript, List.of(key, DIRTY), String.valueOf(userId), String.valueOf(lesson.lessonId()),
                 String.valueOf(lesson.trainingId()), String.valueOf(lesson.courseId()), String.valueOf(lesson.chapterId()),
                 String.valueOf(current), String.valueOf(duration), String.valueOf(completed), updatedAt,
                 traceId == null ? "" : traceId, row == null ? "1" : "0", firstStart.toString());
@@ -94,11 +94,11 @@ public class LearningProgressStore {
      * 只读查看学习进度：优先读 Redis，缓存缺失且 MySQL 有记录时恢复 Redis；
      * 若用户从未产生学习记录，则不初始化缓存，直接返回默认 0 进度。
      */
-    public Map<Object, Object> peek(long userId, Lesson lesson, String traceId) {
-        Map<Object, Object> values = stringRedisTemplate.opsForHash().entries(key(userId, lesson.lessonId()));
+    public Map<Object, Object> peekProgress(long userId, Lesson lesson, String traceId) {
+        Map<Object, Object> values = stringRedisTemplate.opsForHash().entries(progressKey(userId, lesson.lessonId()));
         if (!values.isEmpty()) return values;
-        if (!persisted(userId, lesson.lessonId()).isEmpty()) return read(userId, lesson, traceId);
-        values = stringRedisTemplate.opsForHash().entries(key(userId, lesson.lessonId()));
+        if (!readPersistedProgress(userId, lesson.lessonId()).isEmpty()) return readProgress(userId, lesson, traceId);
+        values = stringRedisTemplate.opsForHash().entries(progressKey(userId, lesson.lessonId()));
         if (!values.isEmpty()) return values;
         return Map.of("progressSeconds", "0", "durationSeconds",
                 String.valueOf(lesson.videoDuration() == null ? 0 : lesson.videoDuration()), "completed", "0", "updatedAt", "");
@@ -108,24 +108,26 @@ public class LearningProgressStore {
      * 更新视频学习进度：先确保进度已初始化，再计算完成阈值并调用 Lua 原子更新 Redis；
      * 防止进度倒退，同时标记 dirty，并返回 0=未更新、1=更新未完成、2=首次完成。
      */
-    public long update(long userId, Lesson lesson, int seconds, double ratio, String traceId) {
-        read(userId, lesson, traceId);
-        int threshold = (int) Math.ceil(lesson.videoDuration() * ratio);
-        List<?> result = stringRedisTemplate.execute(progress, List.of(key(userId, lesson.lessonId()), DIRTY), member(userId, lesson.lessonId()),
+    public long updateProgress(long userId, Lesson lesson, int seconds, double completeRatio, String traceId) {
+        readProgress(userId, lesson, traceId);
+        int threshold = (int) Math.ceil(lesson.videoDuration() * completeRatio);
+        List<?> result = stringRedisTemplate.execute(progressScript, List.of(progressKey(userId, lesson.lessonId()), DIRTY),
+                progressMember(userId, lesson.lessonId()),
                 String.valueOf(seconds), String.valueOf(threshold), Instant.now().toString(), traceId == null ? "" : traceId);
         if (result == null || result.isEmpty() || ((Number) result.get(0)).longValue() < 0) throw new IllegalStateException("进度初始化失败");
         return ((Number) result.get(0)).longValue();
     }
 
-    public long complete(long userId, Lesson lesson, String traceId) {
-        read(userId, lesson, traceId);
-        Long result = stringRedisTemplate.execute(complete, List.of(key(userId, lesson.lessonId()), DIRTY), member(userId, lesson.lessonId()),
+    public long completeLesson(long userId, Lesson lesson, String traceId) {
+        readProgress(userId, lesson, traceId);
+        Long result = stringRedisTemplate.execute(completeScript, List.of(progressKey(userId, lesson.lessonId()), DIRTY),
+                progressMember(userId, lesson.lessonId()),
                 Instant.now().toString(), traceId == null ? "" : traceId);
         if (result == null || result < 0) throw new IllegalStateException("进度初始化失败");
         return result;
     }
 
-    public Map<String, Object> persisted(long userId, long lessonId) {
+    public Map<String, Object> readPersistedProgress(long userId, long lessonId) {
         List<Map<String, Object>> rows = learningRecordMapper.selectPersistedProgress(userId, lessonId);
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }
@@ -136,12 +138,12 @@ public class LearningProgressStore {
      */
     public long countCompleted(long userId, List<Long> lessonIds) {
         if (lessonIds.isEmpty()) return 0;
-        List<Long> persisted = learningRecordMapper.selectCompletedLessonIds(userId);
-        Set<Long> completed = new HashSet<>(persisted);
+        List<Long> persistedLessonIds = learningRecordMapper.selectCompletedLessonIds(userId);
+        Set<Long> completed = new HashSet<>(persistedLessonIds);
         try {
-            for (Long id : lessonIds) {
-                Object flag = stringRedisTemplate.opsForHash().get(key(userId, id), "completed");
-                if ("1".equals(flag)) completed.add(id);
+            for (Long lessonId : lessonIds) {
+                Object flag = stringRedisTemplate.opsForHash().get(progressKey(userId, lessonId), "completed");
+                if ("1".equals(flag)) completed.add(lessonId);
             }
         } catch (Exception exception) {
             log.warn("Redis completion lookup failed; using persisted progress, userId={}", userId, exception);
@@ -150,7 +152,7 @@ public class LearningProgressStore {
     }
 
     @Scheduled(fixedDelayString = "${campustrain.learning.flush-interval-ms:5000}")
-    public void flush() {
+    public void flushDirtyProgress() {
         try {
             Set<String> members = stringRedisTemplate.opsForSet().distinctRandomMembers(DIRTY, batchSize);
             if (members == null || members.isEmpty()) return;
@@ -159,14 +161,14 @@ public class LearningProgressStore {
                 try {
                     String[] ids = member.split(":", -1);
                     if (ids.length != 2) throw new IllegalStateException("invalid dirty member");
-                    String key = key(Long.parseLong(ids[0]), Long.parseLong(ids[1]));
+                    String key = progressKey(Long.parseLong(ids[0]), Long.parseLong(ids[1]));
                     Map<Object, Object> snapshot = stringRedisTemplate.opsForHash().entries(key);
                     if (snapshot.isEmpty()) {
                         log.error("dirty progress missing, member={}", member);
                         continue;
                     }
-                    transactionTemplate.executeWithoutResult(status -> persist(snapshot));
-                    stringRedisTemplate.execute(clear, List.of(key, DIRTY), member, value(snapshot, "revision"));
+                    transactionTemplate.executeWithoutResult(status -> persistProgress(snapshot));
+                    stringRedisTemplate.execute(clearDirtyScript, List.of(key, DIRTY), member, requiredValue(snapshot, "revision"));
                     saved++;
                 } catch (Exception exception) {
                     log.error("learning progress flush failed, member={}", member, exception);
@@ -178,41 +180,41 @@ public class LearningProgressStore {
         }
     }
 
-    private void persist(Map<Object, Object> state) {
-        long userId = number(state, "userId");
-        long lessonId = number(state, "lessonId");
-        int done = (int) number(state, "completed");
+    private void persistProgress(Map<Object, Object> state) {
+        long userId = requiredNumber(state, "userId");
+        long lessonId = requiredNumber(state, "lessonId");
+        int done = (int) requiredNumber(state, "completed");
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime learnedAt = LocalDateTime.ofInstant(Instant.parse(value(state, "updatedAt")), ZoneId.systemDefault());
-        LocalDateTime firstStart = state.containsKey("firstStartTime") ? LocalDateTime.parse(value(state, "firstStartTime")) : learnedAt;
-        learningRecordMapper.upsertProgress(userId, number(state, "trainingId"), number(state, "courseId"),
-                number(state, "chapterId"), lessonId, number(state, "progressSeconds"),
-                number(state, "durationSeconds"), done == 1 ? 2 : 1, done, firstStart, learnedAt,
+        LocalDateTime learnedAt = LocalDateTime.ofInstant(Instant.parse(requiredValue(state, "updatedAt")), ZoneId.systemDefault());
+        LocalDateTime firstStart = state.containsKey("firstStartTime") ? LocalDateTime.parse(requiredValue(state, "firstStartTime")) : learnedAt;
+        learningRecordMapper.upsertProgress(userId, requiredNumber(state, "trainingId"), requiredNumber(state, "courseId"),
+                requiredNumber(state, "chapterId"), lessonId, requiredNumber(state, "progressSeconds"),
+                requiredNumber(state, "durationSeconds"), done == 1 ? 2 : 1, done, firstStart, learnedAt,
                 done == 1 ? learnedAt : null, now, now);
         if (done == 1) {
             String eventId = UUID.randomUUID().toString();
             String payload = objectMapper.writeValueAsString(Map.of("eventId", eventId, "eventType", "LEARNING_COMPLETED", "userId", userId,
-                    "trainingId", number(state, "trainingId"), "courseId", number(state, "courseId"), "lessonId", lessonId,
-                    "occurredAt", now.toString(), "traceId", value(state, "traceId")));
+                    "trainingId", requiredNumber(state, "trainingId"), "courseId", requiredNumber(state, "courseId"), "lessonId", lessonId,
+                    "occurredAt", now.toString(), "traceId", requiredValue(state, "traceId")));
             learningOutboxMapper.insertCompletedEvent(eventId, userId, lessonId, payload, now);
         }
     }
 
-    private static String value(Map<Object, Object> state, String key) {
+    private static String requiredValue(Map<Object, Object> state, String key) {
         Object value = state.get(key);
         if (value == null) throw new IllegalStateException("missing " + key);
         return value.toString();
     }
 
-    private static long number(Map<Object, Object> state, String key) {
-        return Long.parseLong(value(state, key));
+    private static long requiredNumber(Map<Object, Object> state, String key) {
+        return Long.parseLong(requiredValue(state, key));
     }
 
-    private static int flag(Object value) {
+    private static int completedFlag(Object value) {
         return value instanceof Boolean bool ? (bool ? 1 : 0) : ((Number) value).intValue();
     }
 
-    private static LocalDateTime localDateTime(Object value) {
+    private static LocalDateTime toLocalDateTime(Object value) {
         if (value instanceof LocalDateTime local) return local;
         if (value instanceof Timestamp timestamp) return timestamp.toLocalDateTime();
         throw new IllegalStateException("unexpected SQL timestamp type");

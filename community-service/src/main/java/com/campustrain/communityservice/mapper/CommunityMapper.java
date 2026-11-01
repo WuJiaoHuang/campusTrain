@@ -38,11 +38,11 @@ public interface CommunityMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertComment(CommentInsert comment);
 
-    @Select("SELECT " + QUESTION_COLUMNS + " FROM question WHERE id=#{id} AND status=1")
-    Question selectQuestionById(@Param("id") long id);
+    @Select("SELECT " + QUESTION_COLUMNS + " FROM question WHERE id=#{questionId} AND status=1")
+    Question selectQuestionById(@Param("questionId") long questionId);
 
-    @Select("SELECT " + ANSWER_COLUMNS + " FROM answer WHERE id=#{id} AND status=1")
-    Answer selectAnswerById(@Param("id") long id);
+    @Select("SELECT " + ANSWER_COLUMNS + " FROM answer WHERE id=#{answerId} AND status=1")
+    Answer selectAnswerById(@Param("answerId") long answerId);
 
     @Select("<script>SELECT " + QUESTION_COLUMNS + " FROM question WHERE status=1 " +
             "<if test='trainingId != null'>AND training_id=#{trainingId}</if> " +
@@ -64,48 +64,48 @@ public interface CommunityMapper {
     @Select("SELECT COUNT(*) FROM answer WHERE question_id=#{questionId} AND status=1")
     long countAnswers(@Param("questionId") long questionId);
 
-    @Select("SELECT " + COMMENT_COLUMNS + " FROM comment WHERE target_type=#{type} AND target_id=#{targetId} " +
+    @Select("SELECT " + COMMENT_COLUMNS + " FROM comment WHERE target_type=#{targetType} AND target_id=#{targetId} " +
             "AND status=1 ORDER BY id ASC LIMIT #{size} OFFSET #{offset}")
-    List<Comment> selectCommentPage(@Param("type") String type, @Param("targetId") long targetId,
+    List<Comment> selectCommentPage(@Param("targetType") String targetType, @Param("targetId") long targetId,
                                     @Param("offset") int offset, @Param("size") int size);
 
-    @Select("SELECT COUNT(*) FROM comment WHERE target_type=#{type} AND target_id=#{targetId} AND status=1")
-    long countComments(@Param("type") String type, @Param("targetId") long targetId);
+    @Select("SELECT COUNT(*) FROM comment WHERE target_type=#{targetType} AND target_id=#{targetId} AND status=1")
+    long countComments(@Param("targetType") String targetType, @Param("targetId") long targetId);
 
-    @Update("UPDATE question SET answer_count=answer_count+1,update_time=NOW() WHERE id=#{id} AND status=1")
-    int incrementQuestionAnswerCount(@Param("id") long id);
+    @Update("UPDATE question SET answer_count=answer_count+1,update_time=NOW() WHERE id=#{questionId} AND status=1")
+    int incrementQuestionAnswerCount(@Param("questionId") long questionId);
 
-    @Update("UPDATE question SET comment_count=comment_count+1,update_time=NOW() WHERE id=#{id} AND status=1")
-    int incrementQuestionCommentCount(@Param("id") long id);
+    @Update("UPDATE question SET comment_count=comment_count+1,update_time=NOW() WHERE id=#{questionId} AND status=1")
+    int incrementQuestionCommentCount(@Param("questionId") long questionId);
 
-    @Update("UPDATE answer SET comment_count=comment_count+1,update_time=NOW() WHERE id=#{id} AND status=1")
-    int incrementAnswerCommentCount(@Param("id") long id);
+    @Update("UPDATE answer SET comment_count=comment_count+1,update_time=NOW() WHERE id=#{answerId} AND status=1")
+    int incrementAnswerCommentCount(@Param("answerId") long answerId);
 
-    @Select("SELECT CAST(user_id AS CHAR) FROM like_relation WHERE target_type=#{type} AND target_id=#{targetId} AND status=1")
-    Set<String> selectActiveLikers(@Param("type") String type, @Param("targetId") long targetId);
+    @Select("SELECT CAST(user_id AS CHAR) FROM like_relation WHERE target_type=#{targetType} AND target_id=#{targetId} AND status=1")
+    Set<String> selectActiveLikers(@Param("targetType") String targetType, @Param("targetId") long targetId);
 
-    @Select("<script>SELECT target_id FROM like_relation WHERE target_type=#{type} AND user_id=#{userId} " +
-            "AND status=1 AND target_id IN <foreach collection='targets' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
-    Set<Long> selectLikedTargetIds(@Param("type") String type, @Param("targets") Set<Long> targets,
+    @Select("<script>SELECT target_id FROM like_relation WHERE target_type=#{targetType} AND user_id=#{userId} " +
+            "AND status=1 AND target_id IN <foreach collection='targetIds' item='targetId' open='(' separator=',' close=')'>#{targetId}</foreach></script>")
+    Set<Long> selectLikedTargetIds(@Param("targetType") String targetType, @Param("targetIds") Set<Long> targetIds,
                                    @Param("userId") long userId);
 
     @Insert("INSERT INTO like_relation(user_id,target_type,target_id,status,create_time,update_time) " +
-            "VALUES(#{userId},#{type},#{targetId},1,NOW(),NOW()) ON DUPLICATE KEY UPDATE status=1,update_time=NOW()")
-    int upsertActiveLike(@Param("userId") long userId, @Param("type") String type, @Param("targetId") long targetId);
+            "VALUES(#{userId},#{targetType},#{targetId},1,NOW(),NOW()) ON DUPLICATE KEY UPDATE status=1,update_time=NOW()")
+    int upsertActiveLike(@Param("userId") long userId, @Param("targetType") String targetType, @Param("targetId") long targetId);
 
     @Update("UPDATE like_relation SET status=0,update_time=NOW() WHERE user_id=#{userId} " +
-            "AND target_type=#{type} AND target_id=#{targetId} AND status=1")
-    int deactivateLike(@Param("userId") long userId, @Param("type") String type, @Param("targetId") long targetId);
+            "AND target_type=#{targetType} AND target_id=#{targetId} AND status=1")
+    int deactivateLike(@Param("userId") long userId, @Param("targetType") String targetType, @Param("targetId") long targetId);
 
-    @Update("UPDATE question SET like_count=#{count},update_time=NOW() WHERE id=#{id} AND status=1")
-    int updateQuestionLikeCount(@Param("id") long id, @Param("count") long count);
+    @Update("UPDATE question SET like_count=#{count},update_time=NOW() WHERE id=#{questionId} AND status=1")
+    int updateQuestionLikeCount(@Param("questionId") long questionId, @Param("count") long count);
 
-    @Update("UPDATE answer SET like_count=#{count},update_time=NOW() WHERE id=#{id} AND status=1")
-    int updateAnswerLikeCount(@Param("id") long id, @Param("count") long count);
+    @Update("UPDATE answer SET like_count=#{count},update_time=NOW() WHERE id=#{answerId} AND status=1")
+    int updateAnswerLikeCount(@Param("answerId") long answerId, @Param("count") long count);
 
     @Insert("INSERT INTO event_outbox(event_id,event_type,target_id,payload,status,retry_count,create_time,update_time) " +
-            "VALUES(#{eventId},#{type},#{targetId},#{payload},'NEW',0,NOW(),NOW())")
-    int insertOutboxEvent(@Param("eventId") String eventId, @Param("type") String type,
+            "VALUES(#{eventId},#{eventType},#{targetId},#{payload},'NEW',0,NOW(),NOW())")
+    int insertOutboxEvent(@Param("eventId") String eventId, @Param("eventType") String eventType,
                           @Param("targetId") long targetId, @Param("payload") String payload);
 
     @Select("SELECT event_id,payload FROM event_outbox WHERE status='NEW' ORDER BY id LIMIT #{limit}")

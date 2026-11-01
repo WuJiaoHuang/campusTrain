@@ -12,13 +12,13 @@ public interface UserService extends IService<User> {
 
     Long createUser(UserCreateDTO dto);
 
-    UserVO getUserDetail(Long id);
+    UserVO getUserDetail(Long userId);
 
     Page<UserVO> pageUsers(UserPageQueryDTO dto);
 
     void updateUser(UserUpdateDTO dto);
 
-    void deleteUser(Long id);
+    void deleteUser(Long userId);
 
     User getUserEntityByUsername(String username);
 }

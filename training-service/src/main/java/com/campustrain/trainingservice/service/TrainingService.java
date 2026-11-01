@@ -14,15 +14,15 @@ public interface TrainingService extends IService<Training> {
 
     Long createTraining(TrainingCreateDTO dto);
 
-    TrainingVO getTrainingDetail(Long id);
+    TrainingVO getTrainingDetail(Long trainingId);
 
-    TrainingEnrollmentCheckVO getEnrollmentCheck(Long id);
+    TrainingEnrollmentCheckVO getEnrollmentCheck(Long trainingId);
 
     void updateTraining(TrainingUpdateDTO dto);
 
     Page<TrainingVO> pageTrainings(TrainingPageQueryDTO dto);
 
-    void changeStatus(Long id, Integer targetStatus);
+    void changeStatus(Long trainingId, Integer targetStatus);
 
     TrainingCatalogVO getTrainingCatalog(Long trainingId);
 }

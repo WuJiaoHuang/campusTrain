@@ -38,7 +38,7 @@ public class TrainingCacheService {
         this.properties = properties;
     }
 
-    public <T> CacheLookup<T> get(String cacheKey, Long trainingId, Class<T> valueType, Duration redisTtl,
+    public <T> CacheLookup<T> getOrLoad(String cacheKey, Long trainingId, Class<T> valueType, Duration redisTtl,
             Supplier<T> databaseLoader) {
         CacheLookup<T> local = readLocal(cacheKey, trainingId, valueType);
         if (local != null) return local;
@@ -69,7 +69,7 @@ public class TrainingCacheService {
 
     //删除某个培训详情的缓存
     public void evictDetail(Long trainingId) {
-        evict(TrainingCacheKeys.detail(trainingId), trainingId);
+        evict(TrainingCacheKeys.detailKey(trainingId), trainingId);
     }
 
     public Duration detailTtl() {
@@ -82,7 +82,7 @@ public class TrainingCacheService {
 
     //某个培训的课程目录缓存
     public void evictCatalog(Long trainingId) {
-        evict(TrainingCacheKeys.catalog(trainingId), trainingId);
+        evict(TrainingCacheKeys.catalogKey(trainingId), trainingId);
     }
 
     private <T> CacheLookup<T> readLocal(String cacheKey, Long trainingId, Class<T> valueType) {

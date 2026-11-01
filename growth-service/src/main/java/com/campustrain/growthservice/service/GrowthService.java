@@ -8,12 +8,12 @@ import java.util.List;
 public interface GrowthService {
     String TOTAL_RANKING_KEY = "campustrain:growth:ranking:total";
 
-    boolean award(LearningCompletedEvent event);
-    boolean awardCommunity(CommunityActionEvent event);
-    List<RankView> getTopRanking(String key, int limit);
-    RankView getMyRanking(String key, long userId);
-    void rebuild(String month);
-    void settle(String requestedSeason);
+    boolean awardLearningCompletedPoints(LearningCompletedEvent event);
+    boolean awardCommunityActionPoints(CommunityActionEvent event);
+    List<RankView> getTopRanking(String rankingKey, int limit);
+    RankView getMyRanking(String rankingKey, long userId);
+    void rebuildRankings(String month);
+    void settleSeason(String requestedSeason);
 
     static String monthRankingKey(String month) {
         return "campustrain:growth:ranking:month:" + month;

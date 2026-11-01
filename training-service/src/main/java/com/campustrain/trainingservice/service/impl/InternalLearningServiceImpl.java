@@ -38,7 +38,7 @@ public class InternalLearningServiceImpl implements InternalLearningService {
 
     @Override
     public VideoPlayVO getLessonPlayUrl(Long lessonId) {
-        return lessonService.createPlayUrl(lessonId);
+        return lessonService.getLessonPlayUrl(lessonId);
     }
 
     @Override

@@ -25,9 +25,9 @@ training-service 在阶段 4 新增课程、章节、课时与培训课程目录
 | --- | --- | --- |
 | POST | `/course/create` | 创建课程 |
 | PUT | `/course/update` | 修改课程 |
-| GET | `/course/get/{id}` | 查询课程详情 |
+| GET | `/course/get/{courseId}` | 查询课程详情 |
 | GET | `/course/list/by-training/{trainingId}` | 查询培训下课程 |
-| DELETE | `/course/delete/{id}` | 删除课程 |
+| DELETE | `/course/delete/{courseId}` | 删除课程 |
 
 ### 章节管理
 
@@ -37,7 +37,7 @@ training-service 在阶段 4 新增课程、章节、课时与培训课程目录
 | PUT | `/chapter/update` | 修改章节 |
 | GET | `/chapter/list/by-course/{courseId}` | 查询课程下章节 |
 | PUT | `/chapter/update/sort` | 章节排序 |
-| DELETE | `/chapter/delete/{id}` | 删除章节 |
+| DELETE | `/chapter/delete/{chapterId}` | 删除章节 |
 
 ### 课时管理
 
@@ -47,7 +47,7 @@ training-service 在阶段 4 新增课程、章节、课时与培训课程目录
 | PUT | `/lesson/update` | 修改课时 |
 | GET | `/lesson/list/by-chapter/{chapterId}` | 查询章节下课时 |
 | PUT | `/lesson/update/sort` | 课时排序 |
-| DELETE | `/lesson/delete/{id}` | 删除课时 |
+| DELETE | `/lesson/delete/{lessonId}` | 删除课时 |
 
 ### 培训课程目录
 
@@ -94,17 +94,17 @@ flowchart TD
 | 服务 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
 | user-service | POST | `/user/create` | 创建用户，密码写入 BCrypt 哈希 |
-| user-service | GET | `/user/get/{id}` | 查询用户详情 |
+| user-service | GET | `/user/get/{userId}` | 查询用户详情 |
 | user-service | GET | `/user/list/page` | 分页查询用户 |
 | user-service | PUT | `/user/update` | 修改 nickname、role、status |
-| user-service | DELETE | `/user/delete/{id}` | 删除用户 |
+| user-service | DELETE | `/user/delete/{userId}` | 删除用户 |
 
 ### 认证接口
 
 | 服务 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
 | auth-service | POST | `/auth/login` | 登录并签发 Access Token |
-| auth-service | GET | `/auth/token-info` | 解析 Bearer Token，返回 userId、username、role |
+| auth-service | GET | `/auth/get/token-info` | 解析 Bearer Token，返回 userId、username、role |
 
 ### 开发测试账号
 
@@ -138,12 +138,12 @@ Client
   |
   v
 enrollment-service
-  |-- Feign (user-service -> Nacos -> LoadBalancer -> HTTP GET /user/get/{id})
+  |-- Feign (user-service -> Nacos -> LoadBalancer -> HTTP GET /user/get/{userId})
   |     |
   |     v
   |  campus_user
   |
-  `-- Feign (training-service -> Nacos -> LoadBalancer -> HTTP GET /internal/training/get-enrollment-check/{id})
+  `-- Feign (training-service -> Nacos -> LoadBalancer -> HTTP GET /internal/training/get-enrollment-check/{trainingId})
         |
         v
      campus_training
@@ -207,13 +207,13 @@ Client
 
 ## 阶段 8：Nacos 配置中心
 
-Nacos Discovery 提供服务注册与发现，Nacos Config 提供配置加载和变更通知；两者使用同一 Nacos 地址，但命名空间可分别设置。五个服务均使用 `spring-cloud-starter-alibaba-nacos-config`，通过本地 `application.yml` 的 `spring.config.import` 加载远程配置，不使用 `bootstrap.yml`、`shared-configs` 或 `extension-configs`。
+Nacos Discovery 提供服务注册与发现，Nacos Config 提供配置加载和变更通知；两者使用同一 Nacos 地址，但命名空间可分别设置。各业务服务均使用 `spring-cloud-starter-alibaba-nacos-config`，通过本地 `application.yml` 的 `spring.config.import` 加载远程配置，不使用 `bootstrap.yml`、`shared-configs` 或 `extension-configs`。
 
 启动流程：本地配置先提供应用名、端口、Nacos 地址、Config namespace 和导入列表；随后从 Nacos 导入共享配置和该服务的独立配置，并注册 Discovery。当前 Config 使用 `campustrain-dev` namespace，Discovery 仍使用原有 `public` namespace 和 `DEFAULT_GROUP`，不会切换已有注册环境。
 
 ### 配置清单
 
-以下六个文件均是可直接复制到 Nacos 的完整 YAML；类型为 `yaml`，namespace ID 为 `campustrain-dev`，group 均为 `CAMPUS_TRAIN`：
+以下文件均是可直接复制到 Nacos 的完整 YAML；类型为 `yaml`，namespace ID 为 `campustrain-dev`，group 均为 `CAMPUS_TRAIN`：
 
 | 配置 | namespace | group | Data ID | 用途 |
 | --- | --- | --- | --- | --- |
@@ -223,10 +223,13 @@ Nacos Discovery 提供服务注册与发现，Nacos Config 提供配置加载和
 | [Training](config/nacos/training-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `training-service-dev.yaml` | OpenAPI 扫描范围、创建开关 |
 | [Enrollment](config/nacos/enrollment-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `enrollment-service-dev.yaml` | OpenAPI 扫描范围 |
 | [Auth](config/nacos/auth-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `auth-service-dev.yaml` | OpenAPI 扫描范围 |
+| [Learning](config/nacos/learning-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `learning-service-dev.yaml` | 完成比例、进度落库批量参数 |
+| [Growth](config/nacos/growth-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `growth-service-dev.yaml` | 学习与社区积分规则 |
+| [Community](config/nacos/community-service-dev.yaml) | `campustrain-dev` | `CAMPUS_TRAIN` | `community-service-dev.yaml` | 点赞缓存刷新参数、社区积分 |
 
 Namespace 用于环境隔离，group 用于项目/配置分组，Data ID 标识具体配置文件。dev 默认使用上表；test/prod 分别规划独立 namespace，由部署环境设置实际的 `NACOS_CONFIG_NAMESPACE`，并设置 `CAMPUS_ENV=test` 或 `prod`，相应 Data ID 使用 `*-test.yaml` 或 `*-prod.yaml`。test/prod 配置需要在各自 namespace 单独创建，代码没有硬编码生产 namespace ID。切换 Config namespace 不会自动切换 Discovery namespace；生产部署应另行配置 Discovery 的环境隔离。
 
-首次部署时，先在 Nacos 创建目标 namespace，再按上表创建六个配置，内容取自对应文件。本项目使用非 optional 的 Nacos Config 导入；不要将示例文件放在项目内就误认为已发布。若 Nacos 启用了认证，还需在启动环境中配置相应 Nacos 认证参数。
+首次部署时，先在 Nacos 创建目标 namespace，再按上表创建对应配置，内容取自对应文件。本项目使用非 optional 的 Nacos Config 导入；不要将示例文件放在项目内就误认为已发布。若 Nacos 启用了认证，还需在启动环境中配置相应 Nacos 认证参数。
 
 ### 配置来源与敏感信息
 
@@ -313,8 +316,13 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 | `training-service-sentinel-degrade-dev.json` | `config/nacos/training-service-sentinel-degrade-dev.json` | 慢调用比例及异常比例 |
 | `enrollment-service-sentinel-flow-dev.json` | `config/nacos/enrollment-service-sentinel-flow-dev.json` | `enrollment-create` 每实例 160 QPS |
 | `campus-gateway-sentinel-flow-dev.json` | `config/nacos/campus-gateway-sentinel-flow-dev.json` | Gateway route `enrollment-service` 每 Gateway 实例 150 QPS |
+| `auth-service-sentinel-flow-dev.json` | `config/nacos/auth-service-sentinel-flow-dev.json` | `auth-login` 等认证入口，当前为空数组，阈值待压测确定 |
+| `learning-service-sentinel-flow-dev.json` | `config/nacos/learning-service-sentinel-flow-dev.json` | `learning-progress-report` 等学习入口，当前为空数组，阈值待压测确定 |
+| `community-service-sentinel-flow-dev.json` | `config/nacos/community-service-sentinel-flow-dev.json` | `community-like`、`community-unlike` 等社区入口，当前为空数组，阈值待压测确定 |
 
 两个 Degrade Rule 使用 10 秒统计窗口、最少 5 次请求、熔断 5 秒；慢调用 RT 超过 500ms 且比例超过 0.5，或异常比例超过 0.5 时熔断。Flow Rule 和 Degrade Rule 分别由 Nacos 独立数据源加载。规则作用于每个实例本地 Sentinel runtime，并非集群总 QPS；Nacos 只提供共同规则来源。
+
+除上述历史资源外，当前代码已为 6 个热点入口接入 `@SentinelResource`：`auth-login`、`learning-progress-report`、`community-like`、`community-unlike`、`oss-upload-url`、`oss-play-url`。这些资源用于保护登录、学习进度上报、社区点赞/取消点赞和 OSS 签名等高频或高成本入口；对应 flow DataId 已建立但内容保持空数组，阈值尚未确定，须在后续阶段通过 JMeter 压测后回写，不沿用本文的历史实测值。OSS 资源如需熔断，沿用 `training-service-sentinel-degrade-dev.json` 的 Datasource 结构，不在代码中硬编码阈值。旧资源 `training-detail`、`training-enrollment-check`、`enrollment-create` 和 Gateway `enrollment-service` 路由的 800/750/160/150 保持不变。
 
 下载与应用相同版本的 [Sentinel Dashboard 1.8.9](https://github.com/alibaba/Sentinel/releases)，在 Dashboard 主机运行 `java -Dserver.port=8858 -jar sentinel-dashboard-1.8.9.jar`，访问 `http://192.168.10.102:8858`（默认账号密码通常为 `sentinel/sentinel`，部署时请修改）。应用默认连接该地址，可用 `SENTINEL_DASHBOARD` 环境变量覆盖；需保证 Dashboard 与各应用的 Sentinel transport 端口双向可达。Dashboard 负责监控和管理，不代理业务请求；直接在 Dashboard 修改的临时规则不自动写回 Nacos，持久规则应修改对应 Nacos DataId。
 
@@ -338,9 +346,9 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 
 ### Stage 10 三层流量治理与基准
 
-报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /training/get/{id}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/training/get-enrollment-check/{id}` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
+报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /training/get/{trainingId}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/training/get-enrollment-check/{trainingId}` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
 
-Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则。Dashboard 只观察，规则以 Nacos 为准。最终阈值已实测并回写：`training-detail` 800、`training-enrollment-check` 750（均为每个 training JVM 实例），`enrollment-create` 160（每个 enrollment 实例），Gateway 路由 `enrollment-service` 150（每个 Gateway 实例）。这些值来自单机实验，不是生产承诺；详情见 [benchmark-results.md](docs/stage10/benchmark-results.md) 和 [sentinel-thresholds.md](docs/stage10/sentinel-thresholds.md)。Gateway 只有 1 个实例时 150 才是该拓扑的入口总预算；多 Gateway 必须另测。三台 training 的集群峰值实测 1,266 QPS，仅为单实例直连峰值的 1.09 倍，不能把额度简单乘三。
+Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则；`auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 是新增入口的规则占位，当前均为空数组。Dashboard 只观察，规则以 Nacos 为准。最终阈值已实测并回写：`training-detail` 800、`training-enrollment-check` 750（均为每个 training JVM 实例），`enrollment-create` 160（每个 enrollment 实例），Gateway 路由 `enrollment-service` 150（每个 Gateway 实例）。这些值来自单机实验，不是生产承诺；详情见 [benchmark-results.md](docs/stage10/benchmark-results.md) 和 [sentinel-thresholds.md](docs/stage10/sentinel-thresholds.md)。Gateway 只有 1 个实例时 150 才是该拓扑的入口总预算；多 Gateway 必须另测。三台 training 的集群峰值实测 1,266 QPS，仅为单实例直连峰值的 1.09 倍，不能把额度简单乘三。
 
 执行基准前发布以上 DataId，逐项记录 topology，并在受控环境暂时清空对应规则或设置足够高的测试值，先测稳定区间和拐点；在最高稳定区间内留约 20%~30% 余量，再回写每个资源的每实例规则并复测。测试计划、实测拓扑和结果见 [docs/stage10](docs/stage10/benchmark-plan.md)。报名压测必须使用专用未报名 STUDENT 和保持草稿状态的培训；脚本预检状态并断言 HTTP 400，压测前后核对 enrollment 表行数。不要在普通业务环境中直接施压。Stage20 再补充 CPU/JVM/连接池可观测性。
 
@@ -380,7 +388,7 @@ HAVING t.enrolled_count <> COUNT(e.id);
 
 ## Stage 13：Redis + Caffeine 两级缓存
 
-training-service 对 `GET /training/get/{id}` 和 `GET /training/get/catalog/{id}` 使用 Cache Aside：Caffeine L1 -> Redis L2 -> MySQL。Key 分别为 `campustrain:training:detail:{id}` 与 `campustrain:training:catalog:{id}`；空结果使用专用标记，绝不伪造 `TrainingVO`。默认 L1 TTL 为 45 秒，详情/目录 Redis TTL 为 8 分钟，空值 TTL 为 45 秒，正常 Redis TTL 再加 0 至 30 秒随机抖动。所有值可在 Nacos `training-service-dev.yaml` 的 `campustrain.cache` 调整；Redis 默认 `192.168.10.102:6379`、密码 `123456`，可由 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 覆盖。
+training-service 对 `GET /training/get/{trainingId}` 和 `GET /training/get/catalog/{trainingId}` 使用 Cache Aside：Caffeine L1 -> Redis L2 -> MySQL。Key 分别为 `campustrain:training:detail:{trainingId}` 与 `campustrain:training:catalog:{trainingId}`；空结果使用专用标记，绝不伪造 `TrainingVO`。默认 L1 TTL 为 45 秒，详情/目录 Redis TTL 为 8 分钟，空值 TTL 为 45 秒，正常 Redis TTL 再加 0 至 30 秒随机抖动。所有值可在 Nacos `training-service-dev.yaml` 的 `campustrain.cache` 调整；Redis 默认 `192.168.10.102:6379`、密码 `123456`，可由 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 覆盖。
 
 首次 miss 会回源并填充两级缓存；不存在的 ID 只在第一次回源，随后命中短 TTL 空值标记，防止穿透。同一 JVM 的同一个 miss key 使用每 key single-flight 锁，避免热点失效时多线程同时击穿 DB；不同 key 不互相串行。该锁不是分布式锁，多 training 实例之间不协调。Redis TTL 抖动与较短的独立 L1 TTL 缓解雪崩。
 

@@ -8,7 +8,7 @@ community-service 运行于 8090，Gateway 通过 `/community/** → lb://commun
 | --- | --- | --- |
 | POST | `/community/create/question` | 创建问题，学生须有有效报名 |
 | GET | `/community/list/questions?trainingId=&lessonId=&page=&size=` | 分页问题 |
-| GET | `/community/get/question/{id}` | 问题详情、回答、评论、实时点赞 |
+| GET | `/community/get/question/{questionId}` | 问题详情、回答、评论、实时点赞 |
 | POST | `/community/create/answer/{questionId}` | 创建回答并原子增加 `answer_count` |
 | GET | `/community/list/answers/{questionId}?page=&size=` | 分页回答 |
 | POST | `/community/create/comment` | 创建评论 |

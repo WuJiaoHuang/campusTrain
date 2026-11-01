@@ -35,7 +35,7 @@ class InternalTrainingSentinelTest {
         rule.setGrade(RuleConstant.FLOW_GRADE_QPS);
         rule.setCount(0);
         FlowRuleManager.loadRules(List.of(rule));
-        assertEquals(429, internal.enrollmentCheck(1L).getStatusCode().value());
+        assertEquals(429, internal.checkTrainingEnrollment(1L).getStatusCode().value());
         assertEquals(200, detail.getTrainingDetail(1L).getStatusCode().value());
         verify(service, never()).getEnrollmentCheck(anyLong());
     }

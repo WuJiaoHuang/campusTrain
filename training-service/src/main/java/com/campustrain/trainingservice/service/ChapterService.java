@@ -18,5 +18,5 @@ public interface ChapterService extends IService<Chapter> {
 
     void sortChapters(List<ChapterSortDTO> dtoList);
 
-    void deleteChapter(Long id);
+    void deleteChapter(Long chapterId);
 }

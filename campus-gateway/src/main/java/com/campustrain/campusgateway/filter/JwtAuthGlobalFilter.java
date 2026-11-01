@@ -178,6 +178,12 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         if ("/enrollment".equals(path) || path.startsWith("/enrollment/")) {
             return "enrollment-service";
         }
+        if ("/learning".equals(path) || path.startsWith("/learning/")) {
+            return "learning-service";
+        }
+        if ("/growth".equals(path) || path.startsWith("/growth/")) {
+            return "growth-service";
+        }
         if ("/community".equals(path) || path.startsWith("/community/")) {
             return "community-service";
         }

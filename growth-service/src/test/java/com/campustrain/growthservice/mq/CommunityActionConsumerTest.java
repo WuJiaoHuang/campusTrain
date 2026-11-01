@@ -23,7 +23,7 @@ class CommunityActionConsumerTest {
         byte[] bytes = ("{\"eventId\":\"duplicate\",\"eventType\":\"COMMUNITY_ACTION\",\"userId\":1001,"
                 + "\"targetId\":18002,\"targetType\":\"QUESTION\",\"actionType\":\"QUESTION_CREATED\","
                 + "\"occurredAt\":\"2026-10-30T18:00:00+08:00\",\"traceId\":\"trace\"}").getBytes();
-        when(service.awardCommunity(any(CommunityActionEvent.class))).thenReturn(false);
+        when(service.awardCommunityActionPoints(any(CommunityActionEvent.class))).thenReturn(false);
         new CommunityActionConsumer(service, new ObjectMapper()).consume(new Message(bytes, props), channel);
         verify(channel).basicAck(11L, false);
         verify(channel, never()).basicReject(anyLong(), anyBoolean());

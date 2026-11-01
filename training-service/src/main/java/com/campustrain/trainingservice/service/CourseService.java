@@ -13,9 +13,9 @@ public interface CourseService extends IService<Course> {
 
     void updateCourse(CourseUpdateDTO dto);
 
-    CourseVO getCourseDetail(Long id);
+    CourseVO getCourseDetail(Long courseId);
 
     List<CourseVO> listByTrainingId(Long trainingId);
 
-    void deleteCourse(Long id);
+    void deleteCourse(Long courseId);
 }

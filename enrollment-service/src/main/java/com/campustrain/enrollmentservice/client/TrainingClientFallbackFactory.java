@@ -12,14 +12,14 @@ public class TrainingClientFallbackFactory implements FallbackFactory<TrainingCl
     @Override
     public TrainingClient create(Throwable cause) {
         return new TrainingClient() {
-            private <T> RemoteResult<T> unavailable(Long id) {
-                log.error("training Feign fallback, traceId={}, userId={}, trainingId={}", UserContext.getTraceId(), UserContext.getUserId(), id, cause);
+            private <T> RemoteResult<T> unavailable(Long trainingId) {
+                log.error("training Feign fallback, traceId={}, userId={}, trainingId={}", UserContext.getTraceId(), UserContext.getUserId(), trainingId, cause);
                 return RemoteResult.unavailable("培训服务暂时不可用");
             }
-            @Override public RemoteResult<com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO> getTrainingEnrollmentCheck(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> incrementEnrollmentCount(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> decrementEnrollmentCount(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> restoreEnrollmentCount(Long id) { return unavailable(id); }
+            @Override public RemoteResult<com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO> getTrainingEnrollmentCheck(Long trainingId) { return unavailable(trainingId); }
+            @Override public RemoteResult<Void> incrementEnrollmentCount(Long trainingId) { return unavailable(trainingId); }
+            @Override public RemoteResult<Void> decrementEnrollmentCount(Long trainingId) { return unavailable(trainingId); }
+            @Override public RemoteResult<Void> restoreEnrollmentCount(Long trainingId) { return unavailable(trainingId); }
         };
     }
 }

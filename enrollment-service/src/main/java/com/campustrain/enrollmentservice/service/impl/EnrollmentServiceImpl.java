@@ -178,12 +178,12 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     }
 
     @Override
-    public Page<EnrollmentVO> myEnrollments(long page, long size, Integer status) {
+    public Page<EnrollmentVO> getMyEnrollments(long page, long size, Integer status) {
         return queryPage(page, size, status, getCurrentUserId(), null);
     }
 
     @Override
-    public Page<EnrollmentVO> trainingEnrollments(Long trainingId, long page, long size, Integer status) {
+    public Page<EnrollmentVO> getTrainingEnrollments(Long trainingId, long page, long size, Integer status) {
         Long userId = getCurrentUserId();
         String role = UserContext.getRole();
         if (!"ADMIN".equals(role) && !"TEACHER".equals(role)) {

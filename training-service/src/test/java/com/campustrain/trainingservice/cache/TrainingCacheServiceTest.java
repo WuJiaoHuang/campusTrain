@@ -54,12 +54,12 @@ class TrainingCacheServiceTest {
         assertTrue(first.found());
         assertEquals(1, second.value().getEnrolledCount());
         assertEquals(1, db.get());
-        verify(values, times(1)).get(TrainingCacheKeys.detail(1L));
+        verify(values, times(1)).get(TrainingCacheKeys.detailKey(1L));
     }
 
     @Test
     void l2HitRefillsL1WithoutDatabase() throws Exception {
-        String key = TrainingCacheKeys.detail(2L);
+        String key = TrainingCacheKeys.detailKey(2L);
         String json = new ObjectMapper().writeValueAsString(vo(2L, 9));
         when(values.get(key)).thenReturn(json);
         CacheLookup<TrainingVO> hit = detail(2L, () -> { throw new AssertionError("DB should not run"); });
@@ -75,7 +75,7 @@ class TrainingCacheServiceTest {
         assertFalse(detail(404L, () -> { db.incrementAndGet(); return null; }).found());
         assertFalse(detail(404L, () -> { db.incrementAndGet(); return null; }).found());
         assertEquals(1, db.get());
-        verify(values).set(eq(TrainingCacheKeys.detail(404L)), anyString(), eq(Duration.ofSeconds(30)));
+        verify(values).set(eq(TrainingCacheKeys.detailKey(404L)), anyString(), eq(Duration.ofSeconds(30)));
     }
 
     @Test
@@ -100,10 +100,10 @@ class TrainingCacheServiceTest {
 
     @Test
     void redisReadFailureFallsBackToDatabaseAndEvictionDeletesBothLevels() {
-        when(values.get(TrainingCacheKeys.detail(3L))).thenThrow(new IllegalStateException("redis unavailable"));
+        when(values.get(TrainingCacheKeys.detailKey(3L))).thenThrow(new IllegalStateException("redis unavailable"));
         assertTrue(detail(3L, () -> vo(3L, 1)).found());
         cache.evictDetail(3L);
-        verify(redis).delete(TrainingCacheKeys.detail(3L));
+        verify(redis).delete(TrainingCacheKeys.detailKey(3L));
     }
 
     @Test
@@ -117,7 +117,7 @@ class TrainingCacheServiceTest {
     }
 
     private CacheLookup<TrainingVO> detail(Long id, java.util.function.Supplier<TrainingVO> loader) {
-        return cache.get(TrainingCacheKeys.detail(id), id, TrainingVO.class, properties.getDetailTtl(), loader);
+        return cache.getOrLoad(TrainingCacheKeys.detailKey(id), id, TrainingVO.class, properties.getDetailTtl(), loader);
     }
 
     private TrainingVO vo(Long id, int count) {

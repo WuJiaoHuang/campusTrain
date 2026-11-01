@@ -92,15 +92,15 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteChapter(Long id) {
-        Chapter chapter = getExistingChapter(id);
-        Long lessonCount = lessonMapper.selectCount(new LambdaQueryWrapper<Lesson>().eq(Lesson::getChapterId, id));
+    public void deleteChapter(Long chapterId) {
+        Chapter chapter = getExistingChapter(chapterId);
+        Long lessonCount = lessonMapper.selectCount(new LambdaQueryWrapper<Lesson>().eq(Lesson::getChapterId, chapterId));
         if (lessonCount > 0) {
-            log.warn("chapter delete rejected, chapterId={}, lessonCount={}", id, lessonCount);
+            log.warn("chapter delete rejected, chapterId={}, lessonCount={}", chapterId, lessonCount);
             throw new BusinessException("章节下存在课时，无法删除");
         }
 
-        removeById(id);
+        removeById(chapterId);
         CacheInvalidationSupport.afterCommit(() -> evictCatalogForCourse(chapter.getCourseId()));
         log.info("chapter deleted, chapterId={}", chapter.getId());
     }
@@ -112,8 +112,8 @@ public class ChapterServiceImpl extends ServiceImpl<ChapterMapper, Chapter> impl
         }
     }
 
-    private Chapter getExistingChapter(Long id) {
-        Chapter chapter = getById(id);
+    private Chapter getExistingChapter(Long chapterId) {
+        Chapter chapter = getById(chapterId);
         if (chapter == null) {
             throw new BusinessException("章节不存在");
         }

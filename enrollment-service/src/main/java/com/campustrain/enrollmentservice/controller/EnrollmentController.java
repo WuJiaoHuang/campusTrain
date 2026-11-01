@@ -18,7 +18,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -65,7 +64,7 @@ public class EnrollmentController {
     public Result<Page<EnrollmentVO>> getMyEnrollments(@RequestParam(value = "page", defaultValue = "1") @Min(1) long page,
             @RequestParam(value = "size", defaultValue = "10") @Min(1) @Max(100) long size,
             @RequestParam(value = "status", required = false) Integer status) {
-        return Result.success(enrollmentService.myEnrollments(page, size, status));
+        return Result.success(enrollmentService.getMyEnrollments(page, size, status));
     }
 
 @GetMapping("/list/by-training/{trainingId}")
@@ -74,6 +73,6 @@ public class EnrollmentController {
             @RequestParam(value = "page", defaultValue = "1") @Min(1) long page,
             @RequestParam(value = "size", defaultValue = "10") @Min(1) @Max(100) long size,
             @RequestParam(value = "status", required = false) Integer status) {
-        return Result.success(enrollmentService.trainingEnrollments(trainingId, page, size, status));
+        return Result.success(enrollmentService.getTrainingEnrollments(trainingId, page, size, status));
     }
 }

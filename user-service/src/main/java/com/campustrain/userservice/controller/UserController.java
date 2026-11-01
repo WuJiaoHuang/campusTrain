@@ -31,32 +31,32 @@ public class UserController {
     private final UserService userService;
 
     @Operation(summary = "创建用户")
-@PostMapping("/create")
+    @PostMapping("/create")
     public Result<Long> createUser(@Valid @RequestBody UserCreateDTO dto) {
         return Result.success(userService.createUser(dto));
     }
 
     @Operation(summary = "查询用户详情")
-@GetMapping("/get/{userId}")
+    @GetMapping("/get/{userId}")
     public Result<UserVO> getUserDetail(@PathVariable("userId") Long userId) {
         return Result.success(userService.getUserDetail(userId));
     }
 
     @Operation(summary = "分页查询用户")
-@GetMapping("/list/page")
+    @GetMapping("/list/page")
     public Result<Page<UserVO>> pageUsers(@Valid UserPageQueryDTO dto) {
         return Result.success(userService.pageUsers(dto));
     }
 
     @Operation(summary = "修改用户")
-@PutMapping("/update")
+    @PutMapping("/update")
     public Result<Void> updateUser(@Valid @RequestBody UserUpdateDTO dto) {
         userService.updateUser(dto);
         return Result.success();
     }
 
     @Operation(summary = "删除用户")
-@DeleteMapping("/delete/{userId}")
+    @DeleteMapping("/delete/{userId}")
     public Result<Void> deleteUser(@PathVariable("userId") Long userId) {
         userService.deleteUser(userId);
         return Result.success();

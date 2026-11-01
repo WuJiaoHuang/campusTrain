@@ -51,7 +51,7 @@ public class GrowthServiceImpl implements GrowthService {
 
     /** Returns false for a duplicate event, allowing an at-least-once consumer to ACK safely. */
     @Transactional
-    public boolean award(LearningCompletedEvent event) {
+    public boolean awardLearningCompletedPoints(LearningCompletedEvent event) {
         if (!"LEARNING_COMPLETED".equals(event.eventType())) {
             log.warn("ignore unsupported growth event, eventId={}, type={}", event.eventId(), event.eventType());
             return false;
@@ -77,7 +77,7 @@ public class GrowthServiceImpl implements GrowthService {
     }
 
     @Transactional
-    public boolean awardCommunity(CommunityActionEvent event) {
+    public boolean awardCommunityActionPoints(CommunityActionEvent event) {
         int points = switch (event.actionType()) {
             case "QUESTION_CREATED" -> questionCreatedPoints;
             case "ANSWER_CREATED" -> answerCreatedPoints;
@@ -109,27 +109,27 @@ public class GrowthServiceImpl implements GrowthService {
         return true;
     }
 
-    public List<RankView> getTopRanking(String key, int limit) {
-        var users = stringRedisTemplate.opsForZSet().reverseRange(key, 0, limit - 1);
+    public List<RankView> getTopRanking(String rankingKey, int limit) {
+        var users = stringRedisTemplate.opsForZSet().reverseRange(rankingKey, 0, limit - 1);
         if (users == null || users.isEmpty()) return List.of();
         List<RankView> result = new ArrayList<>();
         long rank = 1;
         for (String user : users) {
-            Double score = stringRedisTemplate.opsForZSet().score(key, user);
+            Double score = stringRedisTemplate.opsForZSet().score(rankingKey, user);
             if (score != null) result.add(new RankView(rank++, Long.parseLong(user), score.longValue()));
         }
         return result;
     }
 
-    public RankView getMyRanking(String key, long userId) {
+    public RankView getMyRanking(String rankingKey, long userId) {
         String member = String.valueOf(userId);
-        Long rank = stringRedisTemplate.opsForZSet().reverseRank(key, member);
-        Double score = stringRedisTemplate.opsForZSet().score(key, member);
+        Long rank = stringRedisTemplate.opsForZSet().reverseRank(rankingKey, member);
+        Double score = stringRedisTemplate.opsForZSet().score(rankingKey, member);
         return rank == null || score == null ? null : new RankView(rank + 1, userId, score.longValue());
     }
 
     /** Rebuilds Redis from MySQL without changing the points facts. */
-    public void rebuild(String month) {
+    public void rebuildRankings(String month) {
         stringRedisTemplate.delete(TOTAL_RANKING_KEY);
         for (UserPoints row : growthMapper.selectTotalPoints()) {
             stringRedisTemplate.opsForZSet().add(TOTAL_RANKING_KEY, String.valueOf(row.userId()), row.points());
@@ -146,7 +146,7 @@ public class GrowthServiceImpl implements GrowthService {
 
     /** Settlement is idempotent per season; a settled season and unique history rows prevent duplicates. */
     @Transactional
-    public void settle(String requestedSeason) {
+    public void settleSeason(String requestedSeason) {
         String seasonCode = requestedSeason == null || requestedSeason.isBlank()
                 ? YearMonth.now(BUSINESS_ZONE).minusMonths(1).toString() : requestedSeason;
         log.info("season settlement started, seasonCode={}", seasonCode);

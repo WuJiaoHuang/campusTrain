@@ -102,11 +102,11 @@ public class CommunityServiceImpl implements CommunityService {
     }
 
     @Override
-    public QuestionView getQuestionDetail(long id) {
-        Question row = communityMapper.selectQuestionById(id);
+    public QuestionView getQuestionDetail(long questionId) {
+        Question row = communityMapper.selectQuestionById(questionId);
         if (row == null) throw new CommunityException(404, "问题不存在");
-        List<AnswerView> answers = toAnswerViews(communityMapper.selectAnswerPage(id, 0, 100));
-        List<CommentView> comments = communityMapper.selectCommentPage("QUESTION", id, 0, 100).stream().map(this::toCommentView).toList();
+        List<AnswerView> answers = toAnswerViews(communityMapper.selectAnswerPage(questionId, 0, 100));
+        List<CommentView> comments = communityMapper.selectCommentPage("QUESTION", questionId, 0, 100).stream().map(this::toCommentView).toList();
         QuestionView base = toQuestionView(row, true);
         return new QuestionView(base.id(), base.trainingId(), base.courseId(), base.lessonId(), base.userId(),
                 base.title(), base.content(), base.answerCount(), base.likeCount(), base.likedByMe(),
@@ -140,27 +140,27 @@ public class CommunityServiceImpl implements CommunityService {
     @Transactional
     public long createComment(CommentRequest request) {
         UserIdentity identity = requireIdentity();
-        String type = LikeService.targetType(request.targetType());
-        if (!doesTargetExist(type, request.targetId())) throw new CommunityException(404, "评论目标不存在");
-        CommentInsert commentInsert = new CommentInsert(null, type, request.targetId(), identity.userId(), request.content().trim());
+        String targetType = LikeService.normalizeTargetType(request.targetType());
+        if (!doesTargetExist(targetType, request.targetId())) throw new CommunityException(404, "评论目标不存在");
+        CommentInsert commentInsert = new CommentInsert(null, targetType, request.targetId(), identity.userId(), request.content().trim());
         communityMapper.insertComment(commentInsert);
         long id = commentInsert.getId();
-        int updated = "QUESTION".equals(type)
+        int updated = "QUESTION".equals(targetType)
                 ? communityMapper.incrementQuestionCommentCount(request.targetId())
                 : communityMapper.incrementAnswerCommentCount(request.targetId());
         if (updated != 1) throw new IllegalStateException("comment count update failed");
         log.info("comment created, traceId={}, userId={}, targetType={}, targetId={}",
-                identity.traceId(), identity.userId(), type, request.targetId());
+                identity.traceId(), identity.userId(), targetType, request.targetId());
         return id;
     }
 
     @Override
-    public PageView<CommentView> getCommentPage(String type, long targetId, int page, int size) {
+    public PageView<CommentView> getCommentPage(String targetType, long targetId, int page, int size) {
         validatePagination(page, size);
-        type = LikeService.targetType(type);
-        if (!doesTargetExist(type, targetId)) throw new CommunityException(404, "评论目标不存在");
-        return new PageView<>(communityMapper.countComments(type, targetId), page, size,
-                communityMapper.selectCommentPage(type, targetId, (page - 1) * size, size).stream().map(this::toCommentView).toList());
+        targetType = LikeService.normalizeTargetType(targetType);
+        if (!doesTargetExist(targetType, targetId)) throw new CommunityException(404, "评论目标不存在");
+        return new PageView<>(communityMapper.countComments(targetType, targetId), page, size,
+                communityMapper.selectCommentPage(targetType, targetId, (page - 1) * size, size).stream().map(this::toCommentView).toList());
     }
 
     private QuestionView toQuestionView(Question row, boolean includeLiveLike) {
@@ -189,13 +189,13 @@ public class CommunityServiceImpl implements CommunityService {
         return new CommentView(row.id(), row.targetType(), row.targetId(), row.userId(), row.content(), row.createTime());
     }
 
-    private boolean doesTargetExist(String type, long id) {
-        return "QUESTION".equals(type) ? communityMapper.selectQuestionById(id) != null : communityMapper.selectAnswerById(id) != null;
+    private boolean doesTargetExist(String targetType, long targetId) {
+        return "QUESTION".equals(targetType) ? communityMapper.selectQuestionById(targetId) != null : communityMapper.selectAnswerById(targetId) != null;
     }
 
-    private void validateTrainingExists(long id) {
+    private void validateTrainingExists(long trainingId) {
         RemoteResult<Object> result;
-        try { result = trainingClient.getTrainingEnrollmentCheck(id); }
+        try { result = trainingClient.getTrainingEnrollmentCheck(trainingId); }
         catch (FeignException ex) { throw remoteServiceFailure(ex); }
         if (result == null || result.code() == null || result.code() != 200 || result.data() == null)
             throw new CommunityException(result != null && result.code() != null && result.code() == 503 ? 503 : 404,
@@ -213,9 +213,9 @@ public class CommunityServiceImpl implements CommunityService {
         return identity;
     }
 
-    private void insertCommunityOutboxEvent(String action, String type, long targetId, UserIdentity identity) {
+    private void insertCommunityOutboxEvent(String action, String targetType, long targetId, UserIdentity identity) {
         CommunityActionEvent event = new CommunityActionEvent(UUID.randomUUID().toString(), "COMMUNITY_ACTION",
-                identity.userId(), targetId, type, action, LocalDateTime.now().toString(), identity.traceId());
+                identity.userId(), targetId, targetType, action, LocalDateTime.now().toString(), identity.traceId());
         communityMapper.insertOutboxEvent(event.eventId(), event.eventType(), targetId, objectMapper.writeValueAsString(event));
     }
 

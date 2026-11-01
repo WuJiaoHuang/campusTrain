@@ -10,7 +10,7 @@ public interface EnrollmentService {
 
     void cancelEnrollment(Long enrollmentId);
 
-    Page<EnrollmentVO> myEnrollments(long page, long size, Integer status);
+    Page<EnrollmentVO> getMyEnrollments(long page, long size, Integer status);
 
-    Page<EnrollmentVO> trainingEnrollments(Long trainingId, long page, long size, Integer status);
+    Page<EnrollmentVO> getTrainingEnrollments(Long trainingId, long page, long size, Integer status);
 }

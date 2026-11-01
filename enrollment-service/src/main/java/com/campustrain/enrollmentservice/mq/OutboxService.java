@@ -116,11 +116,11 @@ public class OutboxService {
 
     private void markSent(String eventId) { outboxMapper.update(null, new LambdaUpdateWrapper<EventOutbox>().eq(EventOutbox::getEventId, eventId).eq(EventOutbox::getStatus, NEW).set(EventOutbox::getStatus, SENT).set(EventOutbox::getUpdateTime, LocalDateTime.now())); }
     private void markFailed(String eventId, String error) { outboxMapper.update(null, new LambdaUpdateWrapper<EventOutbox>().eq(EventOutbox::getEventId, eventId).eq(EventOutbox::getStatus, NEW).setSql("retry_count = retry_count + 1").set(EventOutbox::getLastError, error == null ? "unknown" : error.substring(0, Math.min(500, error.length()))).set(EventOutbox::getUpdateTime, LocalDateTime.now())); }
-    private String routingKey(String type) {
-        if ("STAGE15_UNROUTABLE".equals(type)) {
+    private String routingKey(String eventType) {
+        if ("STAGE15_UNROUTABLE".equals(eventType)) {
             return "stage15.unroutable";
         }
-        return type != null && type.startsWith("LEARNING_COMPLETED") || "STAGE15_FAIL_ALWAYS".equals(type)
+        return eventType != null && eventType.startsWith("LEARNING_COMPLETED") || "STAGE15_FAIL_ALWAYS".equals(eventType)
                 ? MqConstants.LEARNING_COMPLETED_ROUTING_KEY : MqConstants.ENROLLMENT_SUCCESS_ROUTING_KEY;
     }
     private String traceId(EventOutbox outbox) { try { return objectMapper.readTree(outbox.getPayload()).path("traceId").asText(); } catch (Exception ignored) { return ""; } }

@@ -36,18 +36,18 @@ public class LearningOutboxPublisher {
     }
 
     @Scheduled(fixedDelayString = "${campustrain.learning.outbox-interval-ms:5000}")
-    public void publish() {
+    public void publishPendingEvents() {
         try {
             List<Map<String, Object>> events = learningOutboxMapper.selectNewEvents();
             for (Map<String, Object> event : events) {
-                send(event);
+                sendOutboxEvent(event);
             }
         } catch (Exception exception) {
             log.error("learning outbox scan failed", exception);
         }
     }
 
-    private void send(Map<String, Object> event) {
+    private void sendOutboxEvent(Map<String, Object> event) {
         String id = event.get("event_id").toString();
         long now = System.currentTimeMillis();
         Long previous = inFlight.putIfAbsent(id, now);
@@ -68,7 +68,7 @@ public class LearningOutboxPublisher {
                     if (error != null || confirm == null || !confirm.isAck() || correlation.getReturned() != null) {
                         String reason = error != null ? error.toString() : correlation.getReturned() != null
                                 ? correlation.getReturned().getReplyText() : "publisher NACK";
-                        failed(id, reason);
+                        markOutboxFailed(id, reason);
                         log.error("learning event not delivered, eventId={}, reason={}", id, reason, error);
                     } else {
                         learningOutboxMapper.markSent(id, LocalDateTime.now());
@@ -83,7 +83,7 @@ public class LearningOutboxPublisher {
         } catch (Exception exception) {
             inFlight.remove(id, now);
             try {
-                failed(id, exception.toString());
+                markOutboxFailed(id, exception.toString());
             } catch (Exception databaseException) {
                 log.error("learning outbox failure update failed, eventId={}", id, databaseException);
             }
@@ -91,7 +91,7 @@ public class LearningOutboxPublisher {
         }
     }
 
-    private void failed(String id, String reason) {
+    private void markOutboxFailed(String id, String reason) {
         learningOutboxMapper.recordFailure(id, reason.substring(0, Math.min(reason.length(), 500)), LocalDateTime.now());
     }
 }

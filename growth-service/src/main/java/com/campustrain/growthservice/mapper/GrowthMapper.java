@@ -56,8 +56,8 @@ public interface GrowthMapper {
     @Select("SELECT id FROM ranking_season WHERE season_code=#{code} FOR UPDATE")
     Long selectSeasonIdForUpdate(@Param("code") String code);
 
-    @Select("SELECT status FROM ranking_season WHERE id=#{id}")
-    String selectSeasonStatus(@Param("id") long id);
+    @Select("SELECT status FROM ranking_season WHERE id=#{seasonId}")
+    String selectSeasonStatus(@Param("seasonId") long seasonId);
 
     @Select("SELECT user_id AS userId,SUM(points) AS points FROM points_flow "
             + "WHERE DATE_FORMAT(occurred_at,'%Y-%m')=#{code} GROUP BY user_id ORDER BY points DESC,user_id ASC")
@@ -69,8 +69,8 @@ public interface GrowthMapper {
     void insertHistory(@Param("seasonId") long seasonId, @Param("code") String code,
                        @Param("userId") long userId, @Param("points") long points, @Param("rank") long rank);
 
-    @Update("UPDATE ranking_season SET status='SETTLED',settled_at=NOW() WHERE id=#{id}")
-    void updateSeasonSettled(@Param("id") long id);
+    @Update("UPDATE ranking_season SET status='SETTLED',settled_at=NOW() WHERE id=#{seasonId}")
+    void updateSeasonSettled(@Param("seasonId") long seasonId);
 
     @Insert("INSERT INTO job_execution_record(job_name,biz_key,status,start_time,finish_time) "
             + "VALUES('growthSeasonSettlementJob',#{code},#{status},NOW(),IF(#{status}='DONE',NOW(),NULL)) "

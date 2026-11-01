@@ -31,7 +31,7 @@ class GrowthConsumer {
     public void consume(Message message, Channel channel) throws IOException {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
         try {
-            growthService.award(objectMapper.readValue(message.getBody(), LearningCompletedEvent.class));
+            growthService.awardLearningCompletedPoints(objectMapper.readValue(message.getBody(), LearningCompletedEvent.class));
             channel.basicAck(deliveryTag, false);
         } catch (Exception exception) {
             long retries = retryCount(message);

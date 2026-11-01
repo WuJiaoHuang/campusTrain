@@ -11,9 +11,9 @@ import com.campustrain.communityservice.vo.QuestionView;
 public interface CommunityService {
     long createQuestion(QuestionRequest request);
     PageView<QuestionView> getQuestionPage(Long trainingId, Long lessonId, int page, int size);
-    QuestionView getQuestionDetail(long id);
+    QuestionView getQuestionDetail(long questionId);
     long createAnswer(long questionId, AnswerRequest request);
     PageView<AnswerView> getAnswerPage(long questionId, int page, int size);
     long createComment(CommentRequest request);
-    PageView<CommentView> getCommentPage(String type, long targetId, int page, int size);
+    PageView<CommentView> getCommentPage(String targetType, long targetId, int page, int size);
 }

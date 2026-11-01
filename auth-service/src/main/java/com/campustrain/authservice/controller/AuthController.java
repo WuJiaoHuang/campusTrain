@@ -1,18 +1,20 @@
 package com.campustrain.authservice.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.campustrain.authservice.common.Result;
 import com.campustrain.authservice.dto.LoginDTO;
-import com.campustrain.authservice.exception.BusinessException;
 import com.campustrain.authservice.service.AuthService;
-import com.campustrain.authservice.util.JwtTokenProvider;
 import com.campustrain.authservice.vo.LoginVO;
 import com.campustrain.authservice.vo.TokenInfoVO;
-import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/auth")
@@ -27,37 +30,28 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
-    private final JwtTokenProvider jwtTokenProvider;
 
     @Operation(summary = "用户登录")
     @PostMapping("/login")
-    public Result<LoginVO> login(@Valid @RequestBody LoginDTO dto) {
-        return Result.success(authService.login(dto));
+    @SentinelResource(value = "auth-login", blockHandler = "handleLoginBlock")
+    public ResponseEntity<Result<LoginVO>> login(@Valid @RequestBody LoginDTO dto) {
+        return ResponseEntity.ok(Result.success(authService.login(dto)));
     }
 
+    public ResponseEntity<Result<LoginVO>> handleLoginBlock(LoginDTO dto, BlockException e) {
+        String username = dto == null ? null : dto.getUsername();
+        log.warn("Sentinel blocked request, traceId={}, resource=auth-login, username={}, blockType={}",
+                MDC.get("traceId"), username, e.getClass().getSimpleName());
+        log.debug("Sentinel block detail, resource=auth-login, username={}", username, e);
+        if (e instanceof FlowException) {
+            return ResponseEntity.status(429).body(Result.fail(429, "登录请求过于频繁，请稍后重试"));
+        }
+        return ResponseEntity.status(503).body(Result.fail(503, "认证服务暂时不可用，请稍后重试"));
+    }
 
     @Operation(summary = "解析Token")
-    @GetMapping("/token-info")
-    public Result<TokenInfoVO> tokenInfo(@RequestHeader(value = "Authorization", required = false) String authorization) {
-        String token = resolveBearerToken(authorization);
-        Claims claims = jwtTokenProvider.parseToken(token);
-
-        TokenInfoVO vo = new TokenInfoVO();
-        Object userId = claims.get("userId");
-        if (userId instanceof Number number) {
-            vo.setUserId(number.longValue());
-        } else {
-            vo.setUserId(Long.valueOf(String.valueOf(userId)));
-        }
-        vo.setUsername(claims.getSubject());
-        vo.setRole(claims.get("role", String.class));
-        return Result.success(vo);
-    }
-
-    private String resolveBearerToken(String authorization) {
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
-            throw new BusinessException(401, "Token缺失");
-        }
-        return authorization.substring(7);
+    @GetMapping("/get/token-info")
+    public Result<TokenInfoVO> getTokenInfo(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return Result.success(authService.getTokenInfo(authorization));
     }
 }

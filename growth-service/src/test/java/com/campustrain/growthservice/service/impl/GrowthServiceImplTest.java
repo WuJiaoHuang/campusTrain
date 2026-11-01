@@ -33,7 +33,7 @@ class GrowthServiceImplTest {
     void awardWritesFlowAccountAndBothRankings() {
         GrowthServiceImpl service = service();
         LearningCompletedEvent event = event("first");
-        assertTrue(service.award(event));
+        assertTrue(service.awardLearningCompletedPoints(event));
         verify(mapper).insertFlow(eq(event), eq(10), eq(GrowthServiceImpl.shanghaiDateTime(event.occurredAt())));
         verify(mapper).incrementAccount(1001, 10);
         verify(redis.opsForZSet()).incrementScore(GrowthService.TOTAL_RANKING_KEY, "1001", 10);
@@ -48,8 +48,8 @@ class GrowthServiceImplTest {
                 18001L, "QUESTION", "QUESTION_CREATED", "2026-10-30T10:00:00+08:00", "trace");
         CommunityActionEvent answer = new CommunityActionEvent("answer-event", "COMMUNITY_ACTION", 1001L,
                 18002L, "ANSWER", "ANSWER_CREATED", "2026-10-30T10:00:00+08:00", "trace");
-        assertTrue(service.awardCommunity(question));
-        assertTrue(service.awardCommunity(answer));
+        assertTrue(service.awardCommunityActionPoints(question));
+        assertTrue(service.awardCommunityActionPoints(answer));
         verify(mapper).insertCommunityFlow(eq(question), eq(2), any());
         verify(mapper).insertCommunityFlow(eq(answer), eq(5), any());
         verify(mapper).incrementAccount(1001L, 2);
@@ -62,21 +62,21 @@ class GrowthServiceImplTest {
         CommunityActionEvent event = new CommunityActionEvent("duplicate", "COMMUNITY_ACTION", 1001L,
                 18001L, "QUESTION", "QUESTION_CREATED", "2026-10-30T10:00:00+08:00", "trace");
         doThrow(new DuplicateKeyException("duplicate")).when(mapper).insertCommunityFlow(eq(event), eq(2), any());
-        assertFalse(service.awardCommunity(event));
+        assertFalse(service.awardCommunityActionPoints(event));
         verify(mapper, never()).incrementAccount(anyLong(), anyInt());
     }
 
     @Test
     void awardRemainsTransactional() throws Exception {
-        assertTrue(GrowthServiceImpl.class.getMethod("award", LearningCompletedEvent.class).isAnnotationPresent(Transactional.class));
-        assertTrue(GrowthServiceImpl.class.getMethod("settle", String.class).isAnnotationPresent(Transactional.class));
+        assertTrue(GrowthServiceImpl.class.getMethod("awardLearningCompletedPoints", LearningCompletedEvent.class).isAnnotationPresent(Transactional.class));
+        assertTrue(GrowthServiceImpl.class.getMethod("settleSeason", String.class).isAnnotationPresent(Transactional.class));
     }
 
     @Test
     void duplicateDoesNotIncrementAccountOrRanking() {
         GrowthServiceImpl service = service();
         doThrow(new DuplicateKeyException("duplicate")).when(mapper).insertFlow(any(), anyInt(), any());
-        assertFalse(service.award(event("duplicate")));
+        assertFalse(service.awardLearningCompletedPoints(event("duplicate")));
         verify(mapper, never()).incrementAccount(anyLong(), anyInt());
         verify(redis.opsForZSet(), never()).incrementScore(anyString(), anyString(), anyDouble());
     }
@@ -108,7 +108,7 @@ class GrowthServiceImplTest {
         ZSetOperations<String, String> zset = redis.opsForZSet();
         doThrow(new IllegalStateException("redis down")).when(zset)
                 .incrementScore(GrowthService.TOTAL_RANKING_KEY, "1001", 10);
-        assertTrue(service.award(event("redis-down")));
+        assertTrue(service.awardLearningCompletedPoints(event("redis-down")));
         verify(mapper).incrementAccount(1001, 10);
     }
 
@@ -117,7 +117,7 @@ class GrowthServiceImplTest {
         GrowthServiceImpl service = service();
         when(mapper.selectTotalPoints()).thenReturn(List.of(new UserPoints(17001, 30)));
         when(mapper.selectMonthlyPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 20)));
-        service.rebuild("2026-10");
+        service.rebuildRankings("2026-10");
         verify(redis).delete(GrowthService.TOTAL_RANKING_KEY);
         verify(redis).delete(GrowthService.monthRankingKey("2026-10"));
         verify(redis.opsForZSet()).add(GrowthService.TOTAL_RANKING_KEY, "17001", 30.0);
@@ -130,7 +130,7 @@ class GrowthServiceImplTest {
         when(mapper.selectSeasonIdForUpdate("2026-10")).thenReturn(7L);
         when(mapper.selectSeasonStatus(7L)).thenReturn("ACTIVE");
         when(mapper.selectSeasonPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 30), new UserPoints(17002, 20)));
-        service.settle("2026-10");
+        service.settleSeason("2026-10");
         verify(mapper).insertHistory(7, "2026-10", 17001, 30, 1);
         verify(mapper).insertHistory(7, "2026-10", 17002, 20, 2);
         verify(mapper).updateSeasonSettled(7);
@@ -144,7 +144,7 @@ class GrowthServiceImplTest {
         GrowthServiceImpl service = service();
         when(mapper.selectSeasonIdForUpdate("2026-10")).thenReturn(7L);
         when(mapper.selectSeasonStatus(7L)).thenReturn("SETTLED");
-        service.settle("2026-10");
+        service.settleSeason("2026-10");
         verify(mapper, never()).insertHistory(anyLong(), anyString(), anyLong(), anyLong(), anyLong());
         verify(mapper).upsertJobExecution("2026-10", "DONE");
     }

@@ -23,7 +23,7 @@ class GrowthConsumerTest {
         Message event = new Message(("{\"eventId\":\"duplicate\",\"eventType\":\"LEARNING_COMPLETED\","+
                 "\"userId\":1001,\"trainingId\":2,\"courseId\":3,\"lessonId\":4,"+
                 "\"occurredAt\":\"2026-10-15T10:00:00+08:00\",\"traceId\":\"test\"}").getBytes(), properties);
-        when(service.award(any(LearningCompletedEvent.class))).thenReturn(false);
+        when(service.awardLearningCompletedPoints(any(LearningCompletedEvent.class))).thenReturn(false);
 
         new GrowthConsumer(service, new ObjectMapper()).consume(event, channel);
 

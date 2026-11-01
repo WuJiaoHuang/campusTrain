@@ -6,11 +6,11 @@ public final class TrainingCacheKeys {
     private TrainingCacheKeys() {
     }
 
-    public static String detail(Long trainingId) {
+    public static String detailKey(Long trainingId) {
         return PREFIX + "detail:" + trainingId;
     }
 
-    public static String catalog(Long trainingId) {
+    public static String catalogKey(Long trainingId) {
         return PREFIX + "catalog:" + trainingId;
     }
 }

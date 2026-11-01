@@ -27,7 +27,7 @@ public class CommunityActionConsumer {
     public void consume(Message message, Channel channel) throws IOException {
         long tag = message.getMessageProperties().getDeliveryTag();
         try {
-            growthService.awardCommunity(objectMapper.readValue(message.getBody(), CommunityActionEvent.class));
+            growthService.awardCommunityActionPoints(objectMapper.readValue(message.getBody(), CommunityActionEvent.class));
             channel.basicAck(tag, false);
         } catch (Exception failure) {
             long retries = retryCount(message);
