@@ -90,3 +90,8 @@ replay_pid*
 # Locally generated Stage14 JMeter raw evidence and HTML reports
 scripts/stage14/results/*
 !scripts/stage14/results/.gitkeep
+
+# Stage A smoke and later JMeter raw data; keep only the directory marker.
+scripts/sentinel-benchmark/results/*
+!scripts/sentinel-benchmark/results/.gitkeep
+**/__pycache__/
