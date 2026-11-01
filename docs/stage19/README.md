@@ -26,7 +26,7 @@ MySQL 数据卷 `campustrain-mysql-data` 在当前 VM 绑定到现有 `/root/mys
 
 ## 容器寻址与健康检查
 
-Compose 将 `MYSQL_HOST=mysql`、`REDIS_HOST=redis`、`NACOS_HOST=nacos`、`RABBITMQ_HOST=rabbitmq`、`XXL_JOB_ADMIN_ADDRESSES=http://xxl-job-admin:8080` 注入业务容器。Docker 内建 DNS 将服务名解析为同一网络中的容器地址；Feign 继续使用 Nacos 服务名发现。容器内不要使用 VM IP 来访问这些组件。Sentinel Dashboard 不属于本 Stage 的 Compose 范围，配置可通过 `SENTINEL_DASHBOARD` 指向宿主机现有 Dashboard。
+Compose 将 `MYSQL_HOST=mysql`、`REDIS_HOST=redis`、`NACOS_HOST=nacos`、`RABBITMQ_HOST=rabbitmq`、`XXL_JOB_ADMIN_ADDRESSES=http://xxl-job-admin:8080` 注入业务容器。Docker 内建 DNS 将服务名解析为同一网络中的容器地址；Feign 继续使用 Nacos 服务名发现。Nginx 使用 Docker DNS `127.0.0.11` 动态解析 Gateway，容器重建换 IP 后无需改配置。容器内不要使用 VM IP 来访问这些组件。Sentinel Dashboard 不属于本 Stage 的 Compose 范围，配置可通过 `SENTINEL_DASHBOARD` 指向宿主机现有 Dashboard。
 
 MySQL、Redis、Nacos、RabbitMQ、XXL-JOB Admin 和业务服务均有健康检查，业务服务使用 `/actuator/health`。低内存双核 VM 的冷启动可能需数分钟，因此应用健康检查设有 600 秒启动宽限期。`depends_on` 只控制启动顺序；配置 `condition: service_healthy` 才能等待初始健康，运行时依赖仍可能故障，需查看应用日志和重试结果。RabbitMQ 健康检查探测 AMQP 5672 端口，避免资源紧张时 Erlang CLI 探针超时；业务消息可用性另通过实际发布/消费验证。
 
@@ -48,3 +48,15 @@ docker compose ps training-service
 若容器启动慢，先看 `docker compose ps`，再用 `docker compose logs --tail=100 <service>` 定位。`unhealthy` 时检查容器内监听端口、依赖健康和内存/交换分区；Nacos Config 获取失败时核对 namespace ID、group 和 MySQL 中配置；RabbitMQ 连接失败时核对旧 volume 的节点 hostname、vhost 与权限；MySQL 初始化未执行时核对数据目录是否已有数据；OSS 403 时核对 Bucket ACL、AccessKey 权限和有效期。当前 VM 使用 CentOS 7 的 Linux 3.10 内核，较新的 `nginx:alpine` 镜像在默认 seccomp 下写 PID 文件会报 `Operation not permitted`，因此 Compose 固定使用实测可启动的 `nginx:1.24-alpine`。不要通过删除卷来修复启动问题。
 
 Stage19 只做 Compose 部署与健康检查，不增加 Stage20 指标监控。
+
+## 2026-11-01 虚拟机实测
+
+当前 VM 为 CentOS 7 / Linux 3.10、2 vCPU、约 3.7 GiB RAM。保留原 MySQL/Redis/RabbitMQ 数据目录和卷切换到 Compose；切换前备份了八个数据库。八个业务镜像 `docker compose build --parallel` 成功，全部服务最终在 `docker compose ps` 中为 healthy。初次启动和三实例冷启动在这台小 VM 上耗时数分钟；业务访问应在健康检查通过后开始。通过 Nginx 80 入口，匿名培训请求返回 401，student04 登录、培训 16001 详情/目录、报名、视频课时 16003 开始学习和进度 90 秒均成功；私有 OSS 临时播放 URL 的实际 GET 返回 200、`video/mp4`，临时上传 URL 也成功生成。学习 Outbox 为 SENT，`points_flow` 与 `points_account` 写入 10 分，Redis 总榜和 2026-11 月榜可查询；Stage18 问答列表返回 200。
+
+MySQL、Redis、RabbitMQ 分别执行过 `docker compose restart`。重启后培训人数、有效报名、学习记录、积分账户、Redis 总榜分数仍在；三个业务 MQ 队列均为 durable 且有消费者。RabbitMQ 重启后新完成一个图文课时，积分从 10 增到 20，验证了新的 `learning.completed` 消费链。XXL-JOB Admin 可访问，`campustrain-growth-executor` 以 `http://growth-service:9998/` 注册；高负载时首次手工触发管理台回执超时（trigger=500），执行器实际完成；缩回单实例后重试，任务日志的 trigger/handle 均为 200，2026-10 历史排名仍为 5 条，重复执行未增加记录。
+
+`docker compose up -d --scale training-service=3` 后，Nacos 实测三个健康实例；停止一个 training 容器后 Nacos 降为两个健康实例，Gateway 培训详情仍返回 200，报名依赖再次请求成功。三实例全栈对该 VM 的内存压力很高，测试中出现过一次 Nginx 60 秒 504，后端约 25 秒后才完成报名，说明客户端超时后的结果未知窗口仍存在。Nginx 开发环境代理读取超时已调到 120 秒；测试产生的两个额外报名已通过取消接口清理，培训 16001 的 `enrolled_count` 与有效报名数均恢复为 2。当前部署已缩回一个 training 实例以适配这台 VM；三实例是已验证的扩容能力，不代表这台 VM 可承载三实例下的稳定压测。Sentinel Dashboard 测试结束后已恢复访问。
+
+已停用的五个手工基础设施容器在确认数据复用后移除，并清理无引用镜像/构建缓存；未删除业务数据卷。低内存 VM 不适合作为三实例长期运行环境；实际生产容量仍需在更充足的 CPU/RAM 拓扑下测量。旧 RabbitMQ 数据卷中还保留历史已弃用的学习审计队列消息，本次迁移不清理其数据。
+
+安全检查发现旧 auth-service/Gateway 配置中曾有公开的 JWT 开发默认值，Stage19 已移除该默认值并要求 `JWT_SECRET` 从环境变量注入。本地与 VM 的私有 `.env` 已轮换该开发密钥，旧登录 Token 因此失效，需要重新登录；任何曾在其他环境复用旧值的部署也应单独轮换。

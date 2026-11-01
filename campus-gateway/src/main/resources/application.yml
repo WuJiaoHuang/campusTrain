@@ -66,4 +66,4 @@ spring:
                 - Path=/community/**
 
 jwt:
-  secret: ${JWT_SECRET:development-only-secret-change-me-please-use-env-var-32-bytes-minimum}
+  secret: ${JWT_SECRET}

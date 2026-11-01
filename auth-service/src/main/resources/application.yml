@@ -27,5 +27,5 @@ spring:
     password: ${MYSQL_PASSWORD:123}
 
 jwt:
-  secret: ${JWT_SECRET:development-only-secret-change-me-please-use-env-var-32-bytes-minimum}
+  secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:7200000}
