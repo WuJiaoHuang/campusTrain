@@ -87,7 +87,7 @@ enrollment=1，training=1，user=1，Gateway=1，MySQL=1，Nacos=1。每轮都�
 
 ### 2.4 Gateway 报名入口，8080
 
-Gateway=1，enrollment=1，training=1，user=1，MySQL=1，Nacos=1，经 `POST /enrollments` 进入 `enrollment-service` 路由。
+Gateway=1，enrollment=1，training=1，user=1，MySQL=1，Nacos=1，经 `POST /enrollment/create` 进入 `enrollment-service` 路由。
 
 | 目标 QPS | 线程 | 样本 | 实际吞吐 | Avg | P90 | P95 | P99 | Max | Error% |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -166,7 +166,7 @@ training=8082/8085/8086（3 个 JVM），Gateway=1，enrollment=1，user=1，MyS
 
 ### 5.1 user-service 停止与恢复
 
-通过 Gateway `POST /enrollments`，body `{"trainingId":189}`，user_id=57。停止前、停止后、恢复后均检查数据库。
+通过 Gateway `POST /enrollment/create`，body `{"trainingId":189}`，user_id=57。停止前、停止后、恢复后均检查数据库。
 
 | 时间 | 事件 | HTTP | 响应/耗时 | `(57,189)` 行数 | 全表行数 |
 | --- | --- | ---: | --- | ---: | ---: |

@@ -28,40 +28,40 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/lessons")
+@RequestMapping("/lesson")
 @Tag(name = "课时管理")
 public class LessonController {
 
     private final LessonService lessonService;
 
     @Operation(summary = "绑定课时视频")
-    @PutMapping("/{id}/video")
-    public Result<Void> bindVideo(@PathVariable("id") Long id, @Valid @RequestBody VideoBindDTO dto) {
-        lessonService.bindVideo(id, dto);
+@PutMapping("/bind-video/{lessonId}")
+    public Result<Void> bindVideo(@PathVariable("lessonId") Long lessonId, @Valid @RequestBody VideoBindDTO dto) {
+        lessonService.bindVideo(lessonId, dto);
         return Result.success();
     }
 
     @Operation(summary = "获取视频播放地址")
-    @GetMapping("/{id}/video/play-url")
-    public Result<VideoPlayVO> playUrl(@PathVariable("id") Long id) {
-        return Result.success(lessonService.createPlayUrl(id));
+@GetMapping("/get/play-url/{lessonId}")
+    public Result<VideoPlayVO> playUrl(@PathVariable("lessonId") Long lessonId) {
+        return Result.success(lessonService.createPlayUrl(lessonId));
     }
 
     @Operation(summary = "创建课时")
-    @PostMapping
+@PostMapping("/create")
     public Result<Long> createLesson(@Valid @RequestBody LessonCreateDTO dto) {
         return Result.success(lessonService.createLesson(dto));
     }
 
     @Operation(summary = "修改课时")
-    @PutMapping
+@PutMapping("/update")
     public Result<Void> updateLesson(@Valid @RequestBody LessonUpdateDTO dto) {
         lessonService.updateLesson(dto);
         return Result.success();
     }
 
     @Operation(summary = "查询章节下课时")
-    @GetMapping("/chapter/{chapterId}")
+@GetMapping("/list/by-chapter/{chapterId}")
     public Result<List<LessonVO>> listByChapterId(
             @Parameter(description = "章节ID") @PathVariable("chapterId") Long chapterId
     ) {
@@ -69,16 +69,16 @@ public class LessonController {
     }
 
     @Operation(summary = "课时排序")
-    @PutMapping("/sort")
+@PutMapping("/update/sort")
     public Result<Void> sortLessons(@RequestBody @NotEmpty(message = "课时排序列表不能为空") List<@Valid LessonSortDTO> dtoList) {
         lessonService.sortLessons(dtoList);
         return Result.success();
     }
 
     @Operation(summary = "删除课时")
-    @DeleteMapping("/{id}")
-    public Result<Void> deleteLesson(@Parameter(description = "课时ID") @PathVariable("id") Long id) {
-        lessonService.deleteLesson(id);
+@DeleteMapping("/delete/{lessonId}")
+    public Result<Void> deleteLesson(@Parameter(description = "课时ID") @PathVariable("lessonId") Long lessonId) {
+        lessonService.deleteLesson(lessonId);
         return Result.success();
     }
 }

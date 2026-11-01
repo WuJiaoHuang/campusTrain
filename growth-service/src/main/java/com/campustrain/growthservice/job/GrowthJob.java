@@ -13,7 +13,7 @@ public class GrowthJob {
     public GrowthJob(GrowthService growthService) { this.growthService = growthService; }
 
     @XxlJob("growthSeasonSettlementJob")
-    public void settleSeason() {
+    public void updateSeasonSettled() {
         String season = XxlJobHelper.getJobParam();
         try {
             growthService.settle(season);

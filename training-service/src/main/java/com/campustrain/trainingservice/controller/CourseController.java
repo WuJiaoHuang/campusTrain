@@ -24,33 +24,33 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/courses")
+@RequestMapping("/course")
 @Tag(name = "课程管理")
 public class CourseController {
 
     private final CourseService courseService;
 
     @Operation(summary = "创建课程")
-    @PostMapping
+@PostMapping("/create")
     public Result<Long> createCourse(@Valid @RequestBody CourseCreateDTO dto) {
         return Result.success(courseService.createCourse(dto));
     }
 
     @Operation(summary = "修改课程")
-    @PutMapping
+@PutMapping("/update")
     public Result<Void> updateCourse(@Valid @RequestBody CourseUpdateDTO dto) {
         courseService.updateCourse(dto);
         return Result.success();
     }
 
     @Operation(summary = "查询课程详情")
-    @GetMapping("/{id}")
-    public Result<CourseVO> getCourseDetail(@Parameter(description = "课程ID") @PathVariable("id") Long id) {
-        return Result.success(courseService.getCourseDetail(id));
+@GetMapping("/get/{courseId}")
+    public Result<CourseVO> getCourseDetail(@Parameter(description = "课程ID") @PathVariable("courseId") Long courseId) {
+        return Result.success(courseService.getCourseDetail(courseId));
     }
 
     @Operation(summary = "查询培训下课程")
-    @GetMapping("/training/{trainingId}")
+@GetMapping("/list/by-training/{trainingId}")
     public Result<List<CourseVO>> listByTrainingId(
             @Parameter(description = "培训ID") @PathVariable("trainingId") Long trainingId
     ) {
@@ -58,9 +58,9 @@ public class CourseController {
     }
 
     @Operation(summary = "删除课程")
-    @DeleteMapping("/{id}")
-    public Result<Void> deleteCourse(@Parameter(description = "课程ID") @PathVariable("id") Long id) {
-        courseService.deleteCourse(id);
+@DeleteMapping("/delete/{courseId}")
+    public Result<Void> deleteCourse(@Parameter(description = "课程ID") @PathVariable("courseId") Long courseId) {
+        courseService.deleteCourse(courseId);
         return Result.success();
     }
 }

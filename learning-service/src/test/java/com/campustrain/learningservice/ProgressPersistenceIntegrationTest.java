@@ -16,8 +16,10 @@ import com.campustrain.learningservice.client.dto.Lesson;
 import com.campustrain.learningservice.client.dto.RemoteResult;
 import com.campustrain.learningservice.context.RequestIdentity;
 import com.campustrain.learningservice.controller.LearningController;
+import com.campustrain.learningservice.mapper.LearningOutboxMapper;
+import com.campustrain.learningservice.mapper.LearningRecordMapper;
 import com.campustrain.learningservice.service.LearningProgressStore;
-import com.campustrain.learningservice.service.LearningService;
+import com.campustrain.learningservice.service.impl.LearningServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,9 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -39,6 +44,8 @@ class ProgressPersistenceIntegrationTest {
     private static final long TEST_USER = 16900001L;
     private static final long TEST_LESSON = 16900001L;
     private JdbcTemplate jdbc;
+    private LearningRecordMapper learningRecordMapper;
+    private LearningOutboxMapper learningOutboxMapper;
     private TransactionTemplate tx;
     private LearningProgressStore store;
     private Method persist;
@@ -47,7 +54,16 @@ class ProgressPersistenceIntegrationTest {
         ds.setUrl("jdbc:mysql://" + System.getenv().getOrDefault("MYSQL_HOST", "192.168.10.102") + ":3306/campus_learning?serverTimezone=Asia/Shanghai");
         ds.setUsername(System.getenv().getOrDefault("MYSQL_USERNAME", "root")); ds.setPassword(System.getenv().getOrDefault("MYSQL_PASSWORD", "123"));
         jdbc = new JdbcTemplate(ds); tx = new TransactionTemplate(new DataSourceTransactionManager(ds));
-        store = new LearningProgressStore(mock(StringRedisTemplate.class), jdbc, tx, new ObjectMapper(), 100);
+        SqlSessionFactoryBean factoryBean = new SqlSessionFactoryBean();
+        factoryBean.setDataSource(ds);
+        factoryBean.afterPropertiesSet();
+        SqlSessionFactory sqlSessionFactory = factoryBean.getObject();
+        sqlSessionFactory.getConfiguration().addMapper(LearningRecordMapper.class);
+        sqlSessionFactory.getConfiguration().addMapper(LearningOutboxMapper.class);
+        SqlSessionTemplate sqlSessionTemplate = new SqlSessionTemplate(sqlSessionFactory);
+        learningRecordMapper = sqlSessionTemplate.getMapper(LearningRecordMapper.class);
+        learningOutboxMapper = sqlSessionTemplate.getMapper(LearningOutboxMapper.class);
+        store = new LearningProgressStore(mock(StringRedisTemplate.class), learningRecordMapper, learningOutboxMapper, tx, new ObjectMapper(), 100);
         persist = LearningProgressStore.class.getDeclaredMethod("persist", Map.class); persist.setAccessible(true);
         cleanup();
     }
@@ -93,7 +109,7 @@ class ProgressPersistenceIntegrationTest {
         String key = LearningProgressStore.key(TEST_USER, TEST_LESSON);
         try {
             redis.delete(key);
-            LearningProgressStore actual = new LearningProgressStore(redis, jdbc, tx, new ObjectMapper(), 100);
+            LearningProgressStore actual = new LearningProgressStore(redis, learningRecordMapper, learningOutboxMapper, tx, new ObjectMapper(), 100);
             Lesson lesson = new Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
             assertEquals("0", actual.peek(TEST_USER, lesson, "test").get("progressSeconds"));
             assertFalse(Boolean.TRUE.equals(redis.hasKey(key)));
@@ -122,22 +138,22 @@ class ProgressPersistenceIntegrationTest {
         try {
             Assumptions.assumeTrue(Long.valueOf(0).equals(redis.opsForSet().size(LearningProgressStore.DIRTY)), "dirty set must be empty for isolation");
             redis.delete(key);
-            JdbcTemplate counted = spy(jdbc);
-            LearningProgressStore actual = new LearningProgressStore(redis, counted, tx, new ObjectMapper(), 100);
+            LearningRecordMapper counted = spy(learningRecordMapper);
+            LearningProgressStore actual = new LearningProgressStore(redis, counted, learningOutboxMapper, tx, new ObjectMapper(), 100);
             TrainingClient training = mock(TrainingClient.class); EnrollmentClient enrollment = mock(EnrollmentClient.class);
             Lesson lesson = new Lesson(TEST_LESSON, 0, 100, 16900001L, 16900001L, 16900001L, true);
-            when(training.lesson(TEST_LESSON)).thenReturn(new RemoteResult<>(200, "success", lesson));
-            when(enrollment.active(16900001L, TEST_USER)).thenReturn(new RemoteResult<>(200, "success", true));
-            MockMvc mvc = MockMvcBuilders.standaloneSetup(new LearningController(new LearningService(training, enrollment, actual, 0.9)))
+            when(training.getLessonById(TEST_LESSON)).thenReturn(new RemoteResult<>(200, "success", lesson));
+            when(enrollment.isEnrollmentActive(16900001L, TEST_USER)).thenReturn(new RemoteResult<>(200, "success", true));
+            MockMvc mvc = MockMvcBuilders.standaloneSetup(new LearningController(new LearningServiceImpl(training, enrollment, actual, 0.9)))
                     .addFilters(new RequestIdentity()).build();
             for (int i = 1; i <= 10; i++) {
-                mvc.perform(post("/learning/lessons/{id}/progress", TEST_LESSON).header("X-User-Id", TEST_USER)
+                mvc.perform(post("/learning/report-progress/{id}", TEST_LESSON).header("X-User-Id", TEST_USER)
                         .header("X-User-Role", "STUDENT").contentType("application/json")
                         .content("{\"progressSeconds\":" + i + "}")).andExpect(status().isOk());
             }
-            verify(counted, never()).update(startsWith("INSERT INTO learning_record"), any(Object[].class));
+            verify(counted, never()).upsertProgress(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyInt(), any(), any(), any(), any(), any());
             actual.flush();
-            verify(counted, times(1)).update(startsWith("INSERT INTO learning_record"), any(Object[].class));
+            verify(counted, times(1)).upsertProgress(anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyInt(), any(), any(), nullable(java.time.LocalDateTime.class), any(), any());
             assertEquals(10, jdbc.queryForObject("SELECT progress_seconds FROM learning_record WHERE user_id=? AND lesson_id=?", Integer.class, TEST_USER, TEST_LESSON));
             assertFalse(Boolean.TRUE.equals(redis.opsForSet().isMember(LearningProgressStore.DIRTY, member)));
         } finally {

@@ -1,3 +1,3 @@
 springdoc:
   packages-to-scan: com.campustrain.userservice.controller
-  paths-to-match: /users/**
+  paths-to-match: /user/**

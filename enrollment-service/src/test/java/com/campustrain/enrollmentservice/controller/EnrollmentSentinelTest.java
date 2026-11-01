@@ -30,7 +30,7 @@ class EnrollmentSentinelTest {
         FlowRuleManager.loadRules(List.of(rule));
         EnrollmentCreateDTO dto = new EnrollmentCreateDTO();
         dto.setTrainingId(90001L);
-        var response = controller.enroll(dto);
+        var response = controller.createEnrollment(dto);
         assertEquals(429, response.getStatusCode().value());
         assertEquals(429, response.getBody().getCode());
         verifyNoInteractions(service);

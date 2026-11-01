@@ -43,15 +43,15 @@ spring:
             - id: user-service
               uri: lb://user-service
               predicates:
-                - Path=/users/**
+                - Path=/user/**
             - id: training-service
               uri: lb://training-service
               predicates:
-                - Path=/trainings/**,/courses/**,/chapters/**,/lessons/**,/videos/**
+                - Path=/training/**,/course/**,/chapter/**,/lesson/**,/video/**
             - id: enrollment-service
               uri: lb://enrollment-service
               predicates:
-                - Path=/enrollments/**
+                - Path=/enrollment/**
             - id: learning-service
               uri: lb://learning-service
               predicates:

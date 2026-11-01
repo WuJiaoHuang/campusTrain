@@ -1,83 +1,79 @@
 package com.campustrain.growthservice.mapper;
 
-import com.campustrain.growthservice.dto.LearningCompletedEvent;
 import com.campustrain.growthservice.dto.CommunityActionEvent;
+import com.campustrain.growthservice.dto.LearningCompletedEvent;
 import com.campustrain.growthservice.entity.UserPoints;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowCallbackHandler;
-import org.springframework.stereotype.Repository;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Arg;
+import org.apache.ibatis.annotations.ConstructorArgs;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
-@Repository
-public class GrowthMapper {
-    private final JdbcTemplate jdbcTemplate;
-
-    public GrowthMapper(JdbcTemplate jdbcTemplate) { this.jdbcTemplate = jdbcTemplate; }
-
-    public void insertFlow(LearningCompletedEvent event, int points, LocalDateTime occurredAt) {
-        jdbcTemplate.update("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) VALUES(?,?,?,?,?,?,NOW())",
-                event.eventId(), event.userId(), "LEARNING_COMPLETED", event.lessonId(), points, occurredAt);
+@Mapper
+public interface GrowthMapper {
+    default void insertFlow(LearningCompletedEvent event, int points, LocalDateTime occurredAt) {
+        insertLearningFlowValues(event.eventId(), event.userId(), event.lessonId(), points, occurredAt);
     }
 
-    public void insertCommunityFlow(CommunityActionEvent event, int points, LocalDateTime occurredAt) {
-        jdbcTemplate.update("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) VALUES(?,?,?,?,?,?,NOW())",
-                event.eventId(), event.userId(), event.actionType(), event.targetId(), points, occurredAt);
+    @Insert("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) "
+            + "VALUES(#{eventId},#{userId},'LEARNING_COMPLETED',#{lessonId},#{points},#{occurredAt},NOW())")
+    void insertLearningFlowValues(@Param("eventId") String eventId, @Param("userId") long userId,
+                                  @Param("lessonId") long lessonId, @Param("points") int points,
+                                  @Param("occurredAt") LocalDateTime occurredAt);
+
+    default void insertCommunityFlow(CommunityActionEvent event, int points, LocalDateTime occurredAt) {
+        insertCommunityFlowValues(event.eventId(), event.userId(), event.actionType(), event.targetId(), points, occurredAt);
     }
 
-    public void incrementAccount(long userId, int points) {
-        jdbcTemplate.update("INSERT INTO points_account(user_id,total_points,update_time) VALUES(?,?,NOW()) ON DUPLICATE KEY UPDATE total_points=total_points+VALUES(total_points),update_time=NOW()",
-                userId, points);
-    }
+    @Insert("INSERT INTO points_flow(event_id,user_id,source_type,source_id,points,occurred_at,create_time) "
+            + "VALUES(#{eventId},#{userId},#{actionType},#{targetId},#{points},#{occurredAt},NOW())")
+    void insertCommunityFlowValues(@Param("eventId") String eventId, @Param("userId") long userId,
+                                   @Param("actionType") String actionType, @Param("targetId") long targetId,
+                                   @Param("points") int points, @Param("occurredAt") LocalDateTime occurredAt);
 
-    public List<UserPoints> totalPoints() {
-        List<UserPoints> result = new ArrayList<>();
-        jdbcTemplate.query("SELECT user_id,total_points FROM points_account", (RowCallbackHandler) rs ->
-                result.add(new UserPoints(rs.getLong("user_id"), rs.getLong("total_points"))));
-        return result;
-    }
+    @Insert("INSERT INTO points_account(user_id,total_points,update_time) VALUES(#{userId},#{points},NOW()) "
+            + "ON DUPLICATE KEY UPDATE total_points=total_points+VALUES(total_points),update_time=NOW()")
+    void incrementAccount(@Param("userId") long userId, @Param("points") int points);
 
-    public List<UserPoints> monthlyPoints(String month) {
-        List<UserPoints> result = new ArrayList<>();
-        jdbcTemplate.query("SELECT user_id,SUM(points) AS points FROM points_flow WHERE DATE_FORMAT(occurred_at,'%Y-%m')=? GROUP BY user_id",
-                ps -> ps.setString(1, month),
-                (RowCallbackHandler) rs -> result.add(new UserPoints(rs.getLong("user_id"), rs.getLong("points"))));
-        return result;
-    }
+    @Select("SELECT user_id AS userId,total_points AS points FROM points_account")
+    @ConstructorArgs({@Arg(column = "userId", javaType = long.class), @Arg(column = "points", javaType = long.class)})
+    List<UserPoints> selectTotalPoints();
 
-    public void ensureSeason(String code) {
-        jdbcTemplate.update("INSERT IGNORE INTO ranking_season(season_code,start_time,end_time,status) VALUES(?,STR_TO_DATE(CONCAT(?,'-01'),'%Y-%m-%d'),LAST_DAY(STR_TO_DATE(CONCAT(?,'-01'),'%Y-%m-%d')),'ACTIVE')",
-                code, code, code);
-    }
+    @Select("SELECT user_id AS userId,SUM(points) AS points FROM points_flow "
+            + "WHERE DATE_FORMAT(occurred_at,'%Y-%m')=#{month} GROUP BY user_id")
+    @ConstructorArgs({@Arg(column = "userId", javaType = long.class), @Arg(column = "points", javaType = long.class)})
+    List<UserPoints> selectMonthlyPoints(@Param("month") String month);
 
-    public Long lockedSeasonId(String code) {
-        return jdbcTemplate.queryForObject("SELECT id FROM ranking_season WHERE season_code=? FOR UPDATE", Long.class, code);
-    }
+    @Insert("INSERT IGNORE INTO ranking_season(season_code,start_time,end_time,status) "
+            + "VALUES(#{code},STR_TO_DATE(CONCAT(#{code},'-01'),'%Y-%m-%d'),"
+            + "LAST_DAY(STR_TO_DATE(CONCAT(#{code},'-01'),'%Y-%m-%d')),'ACTIVE')")
+    void insertSeasonIfAbsent(@Param("code") String code);
 
-    public String seasonStatus(long id) {
-        return jdbcTemplate.queryForObject("SELECT status FROM ranking_season WHERE id=?", String.class, id);
-    }
+    @Select("SELECT id FROM ranking_season WHERE season_code=#{code} FOR UPDATE")
+    Long selectSeasonIdForUpdate(@Param("code") String code);
 
-    public List<UserPoints> seasonPoints(String code) {
-        List<UserPoints> result = new ArrayList<>();
-        jdbcTemplate.query("SELECT user_id,SUM(points) AS points FROM points_flow WHERE DATE_FORMAT(occurred_at,'%Y-%m')=? GROUP BY user_id ORDER BY points DESC,user_id ASC",
-                ps -> ps.setString(1, code),
-                (RowCallbackHandler) rs -> result.add(new UserPoints(rs.getLong("user_id"), rs.getLong("points"))));
-        return result;
-    }
+    @Select("SELECT status FROM ranking_season WHERE id=#{id}")
+    String selectSeasonStatus(@Param("id") long id);
 
-    public void insertHistory(long seasonId, String code, long userId, long points, long rank) {
-        jdbcTemplate.update("INSERT IGNORE INTO ranking_history(season_id,season_code,user_id,points,rank_no,create_time) VALUES(?,?,?,?,?,NOW())",
-                seasonId, code, userId, points, rank);
-    }
+    @Select("SELECT user_id AS userId,SUM(points) AS points FROM points_flow "
+            + "WHERE DATE_FORMAT(occurred_at,'%Y-%m')=#{code} GROUP BY user_id ORDER BY points DESC,user_id ASC")
+    @ConstructorArgs({@Arg(column = "userId", javaType = long.class), @Arg(column = "points", javaType = long.class)})
+    List<UserPoints> selectSeasonPoints(@Param("code") String code);
 
-    public void settleSeason(long id) {
-        jdbcTemplate.update("UPDATE ranking_season SET status='SETTLED',settled_at=NOW() WHERE id=?", id);
-    }
+    @Insert("INSERT IGNORE INTO ranking_history(season_id,season_code,user_id,points,rank_no,create_time) "
+            + "VALUES(#{seasonId},#{code},#{userId},#{points},#{rank},NOW())")
+    void insertHistory(@Param("seasonId") long seasonId, @Param("code") String code,
+                       @Param("userId") long userId, @Param("points") long points, @Param("rank") long rank);
 
-    public void recordExecution(String code, String status) {
-        jdbcTemplate.update("INSERT INTO job_execution_record(job_name,biz_key,status,start_time,finish_time) VALUES('growthSeasonSettlementJob',?,?,NOW(),IF(?='DONE',NOW(),NULL)) ON DUPLICATE KEY UPDATE status=VALUES(status),finish_time=VALUES(finish_time)",
-                code, status, status);
-    }
+    @Update("UPDATE ranking_season SET status='SETTLED',settled_at=NOW() WHERE id=#{id}")
+    void updateSeasonSettled(@Param("id") long id);
+
+    @Insert("INSERT INTO job_execution_record(job_name,biz_key,status,start_time,finish_time) "
+            + "VALUES('growthSeasonSettlementJob',#{code},#{status},NOW(),IF(#{status}='DONE',NOW(),NULL)) "
+            + "ON DUPLICATE KEY UPDATE status=VALUES(status),finish_time=VALUES(finish_time)")
+    void upsertJobExecution(@Param("code") String code, @Param("status") String status);
 }

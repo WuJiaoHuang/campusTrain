@@ -97,9 +97,9 @@ class GrowthServiceImplTest {
         when(redis.opsForZSet().reverseRank(GrowthService.TOTAL_RANKING_KEY, "17002")).thenReturn(1L);
         when(redis.opsForZSet().reverseRank(GrowthService.TOTAL_RANKING_KEY, "17003")).thenReturn(null);
         when(redis.opsForZSet().score(GrowthService.TOTAL_RANKING_KEY, "17003")).thenReturn(null);
-        assertEquals(List.of(new RankView(1, 17001, 30), new RankView(2, 17002, 20)), service.top(GrowthService.TOTAL_RANKING_KEY, 2));
-        assertEquals(new RankView(2, 17002, 20), service.mine(GrowthService.TOTAL_RANKING_KEY, 17002));
-        assertNull(service.mine(GrowthService.TOTAL_RANKING_KEY, 17003));
+        assertEquals(List.of(new RankView(1, 17001, 30), new RankView(2, 17002, 20)), service.getTopRanking(GrowthService.TOTAL_RANKING_KEY, 2));
+        assertEquals(new RankView(2, 17002, 20), service.getMyRanking(GrowthService.TOTAL_RANKING_KEY, 17002));
+        assertNull(service.getMyRanking(GrowthService.TOTAL_RANKING_KEY, 17003));
     }
 
     @Test
@@ -115,8 +115,8 @@ class GrowthServiceImplTest {
     @Test
     void rebuildUsesAbsoluteMysqlScores() {
         GrowthServiceImpl service = service();
-        when(mapper.totalPoints()).thenReturn(List.of(new UserPoints(17001, 30)));
-        when(mapper.monthlyPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 20)));
+        when(mapper.selectTotalPoints()).thenReturn(List.of(new UserPoints(17001, 30)));
+        when(mapper.selectMonthlyPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 20)));
         service.rebuild("2026-10");
         verify(redis).delete(GrowthService.TOTAL_RANKING_KEY);
         verify(redis).delete(GrowthService.monthRankingKey("2026-10"));
@@ -127,26 +127,26 @@ class GrowthServiceImplTest {
     @Test
     void settlementWritesStableRanksAndNextSeason() {
         GrowthServiceImpl service = service();
-        when(mapper.lockedSeasonId("2026-10")).thenReturn(7L);
-        when(mapper.seasonStatus(7L)).thenReturn("ACTIVE");
-        when(mapper.seasonPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 30), new UserPoints(17002, 20)));
+        when(mapper.selectSeasonIdForUpdate("2026-10")).thenReturn(7L);
+        when(mapper.selectSeasonStatus(7L)).thenReturn("ACTIVE");
+        when(mapper.selectSeasonPoints("2026-10")).thenReturn(List.of(new UserPoints(17001, 30), new UserPoints(17002, 20)));
         service.settle("2026-10");
         verify(mapper).insertHistory(7, "2026-10", 17001, 30, 1);
         verify(mapper).insertHistory(7, "2026-10", 17002, 20, 2);
-        verify(mapper).settleSeason(7);
-        verify(mapper).ensureSeason("2026-11");
-        verify(mapper).recordExecution("2026-10", "DONE");
+        verify(mapper).updateSeasonSettled(7);
+        verify(mapper).insertSeasonIfAbsent("2026-11");
+        verify(mapper).upsertJobExecution("2026-10", "DONE");
         verify(redis, never()).delete(GrowthService.TOTAL_RANKING_KEY);
     }
 
     @Test
     void settledSeasonDoesNotWriteHistoryAgain() {
         GrowthServiceImpl service = service();
-        when(mapper.lockedSeasonId("2026-10")).thenReturn(7L);
-        when(mapper.seasonStatus(7L)).thenReturn("SETTLED");
+        when(mapper.selectSeasonIdForUpdate("2026-10")).thenReturn(7L);
+        when(mapper.selectSeasonStatus(7L)).thenReturn("SETTLED");
         service.settle("2026-10");
         verify(mapper, never()).insertHistory(anyLong(), anyString(), anyLong(), anyLong(), anyLong());
-        verify(mapper).recordExecution("2026-10", "DONE");
+        verify(mapper).upsertJobExecution("2026-10", "DONE");
     }
 
     private LearningCompletedEvent event(String id) {

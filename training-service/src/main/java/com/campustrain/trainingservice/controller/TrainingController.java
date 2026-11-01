@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/trainings")
+@RequestMapping("/training")
 @Tag(name = "培训管理")
 public class TrainingController {
 
@@ -45,13 +45,13 @@ public class TrainingController {
     private final TrainingInstanceInfo trainingInstanceInfo;
 
     @Operation(summary = "查询当前培训服务实例")
-    @GetMapping("/instance")
+@GetMapping("/get/instance")
     public Result<TrainingInstanceVO> getInstance() {
         return Result.success(trainingInstanceInfo.current());
     }
 
     @Operation(summary = "创建培训")
-    @PostMapping
+@PostMapping("/create")
     public Result<Long> createTraining(@Valid @RequestBody TrainingCreateDTO dto) {
         return Result.success(trainingService.createTraining(dto));
     }
@@ -59,17 +59,17 @@ public class TrainingController {
 
 
     @Operation(summary = "查询培训详情")
-    @GetMapping("/{id}")
+@GetMapping("/get/{trainingId}")
     @SentinelResource(value = "training-detail", blockHandler = "handleTrainingDetailBlock",
             exceptionsToTrace = RuntimeException.class, exceptionsToIgnore = BusinessException.class)
-    public ResponseEntity<Result<TrainingVO>> getTrainingDetail(@Parameter(description = "培训ID") @PathVariable("id") Long id) {
-        return ResponseEntity.ok(Result.success(trainingService.getTrainingDetail(id)));
+    public ResponseEntity<Result<TrainingVO>> getTrainingDetail(@Parameter(description = "培训ID") @PathVariable("trainingId") Long trainingId) {
+        return ResponseEntity.ok(Result.success(trainingService.getTrainingDetail(trainingId)));
     }
 
-    public ResponseEntity<Result<TrainingVO>> handleTrainingDetailBlock(Long id, BlockException e) {
+    public ResponseEntity<Result<TrainingVO>> handleTrainingDetailBlock(Long trainingId, BlockException e) {
         log.warn("Sentinel blocked request, traceId={}, resource=training-detail, trainingId={}, exception={}",
-                TraceIdContext.get(), id, e.getClass().getSimpleName());
-        log.debug("Sentinel block detail, resource=training-detail, trainingId={}", id, e);
+                TraceIdContext.get(), trainingId, e.getClass().getSimpleName());
+        log.debug("Sentinel block detail, resource=training-detail, trainingId={}", trainingId, e);
         if (e instanceof FlowException) {
             return ResponseEntity.status(429).body(Result.fail(429, "请求过于频繁，请稍后再试"));
         }
@@ -77,27 +77,27 @@ public class TrainingController {
     }
 
     @Operation(summary = "修改培训")
-    @PutMapping
+@PutMapping("/update")
     public Result<Void> updateTraining(@Valid @RequestBody TrainingUpdateDTO dto) {
         trainingService.updateTraining(dto);
         return Result.success();
     }
 
     @Operation(summary = "分页查询培训")
-    @GetMapping("/page")
+@GetMapping("/list/page")
     public Result<Page<TrainingVO>> pageTrainings(@ParameterObject @Valid TrainingPageQueryDTO dto) {
         return Result.success(trainingService.pageTrainings(dto));
     }
 
     @Operation(summary = "修改培训状态")
-    @PutMapping("/status")
+@PutMapping("/update/status")
     public Result<Void> changeStatus(@Valid @RequestBody TrainingStatusDTO dto) {
         trainingService.changeStatus(dto.getId(), dto.getStatus());
         return Result.success();
     }
 
     @Operation(summary = "查询培训课程目录")
-    @GetMapping("/{trainingId}/catalog")
+@GetMapping("/get/catalog/{trainingId}")
     public Result<TrainingCatalogVO> getTrainingCatalog(
             @Parameter(description = "培训ID") @PathVariable("trainingId") Long trainingId
     ) {

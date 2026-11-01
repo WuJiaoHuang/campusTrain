@@ -9,6 +9,7 @@ import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
 import com.campustrain.trainingservice.config.TrainingInstanceInfo;
 import com.campustrain.trainingservice.service.TrainingService;
+import com.campustrain.trainingservice.service.InternalTrainingService;
 import com.campustrain.trainingservice.vo.TrainingVO;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -24,8 +25,7 @@ class InternalTrainingSentinelTest {
         TrainingService service = mock(TrainingService.class);
         when(service.getTrainingDetail(1L)).thenReturn(new TrainingVO());
         AspectJProxyFactory internalFactory = new AspectJProxyFactory(new InternalTrainingController(service,
-                mock(com.campustrain.trainingservice.mapper.TrainingMapper.class),
-                mock(com.campustrain.trainingservice.cache.TrainingCacheService.class)));
+                mock(InternalTrainingService.class)));
         internalFactory.addAspect(new SentinelResourceAspect());
         InternalTrainingController internal = internalFactory.getProxy();
         AspectJProxyFactory detailFactory = new AspectJProxyFactory(new TrainingController(service, mock(TrainingInstanceInfo.class)));

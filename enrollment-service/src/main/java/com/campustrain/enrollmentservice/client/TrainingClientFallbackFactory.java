@@ -16,10 +16,10 @@ public class TrainingClientFallbackFactory implements FallbackFactory<TrainingCl
                 log.error("training Feign fallback, traceId={}, userId={}, trainingId={}", UserContext.getTraceId(), UserContext.getUserId(), id, cause);
                 return RemoteResult.unavailable("培训服务暂时不可用");
             }
-            @Override public RemoteResult<com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO> getTrainingById(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> increment(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> decrement(Long id) { return unavailable(id); }
-            @Override public RemoteResult<Void> restore(Long id) { return unavailable(id); }
+            @Override public RemoteResult<com.campustrain.enrollmentservice.remote.vo.RemoteTrainingEnrollmentCheckVO> getTrainingEnrollmentCheck(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> incrementEnrollmentCount(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> decrementEnrollmentCount(Long id) { return unavailable(id); }
+            @Override public RemoteResult<Void> restoreEnrollmentCount(Long id) { return unavailable(id); }
         };
     }
 }

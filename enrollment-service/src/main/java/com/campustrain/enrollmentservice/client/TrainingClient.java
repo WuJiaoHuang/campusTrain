@@ -11,17 +11,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 public interface TrainingClient {
 
     //查询培训报名校验信息；返回 RemoteResult<RemoteTrainingEnrollmentCheckVO>，里面是真正的培训信息，比如 trainingId、teacherId、status、capacity、enrolledCount、enrollStartTime、enrollEndTime。
-    @GetMapping("/internal/trainings/{id}/enrollment-check")
-    RemoteResult<RemoteTrainingEnrollmentCheckVO> getTrainingById(@PathVariable("id") Long id);
+    @GetMapping("/internal/training/get-enrollment-check/{trainingId}")
+    RemoteResult<RemoteTrainingEnrollmentCheckVO> getTrainingEnrollmentCheck(@PathVariable("trainingId") Long trainingId);
 
     //尝试给指定id的training_cout加1,如果失败返回400状态码
-    @PostMapping("/internal/trainings/{id}/enrollment-count/increment")
-    RemoteResult<Void> increment(@PathVariable("id") Long id);
+    @PostMapping("/internal/training/increment-enrollment-count/{trainingId}")
+    RemoteResult<Void> incrementEnrollmentCount(@PathVariable("trainingId") Long trainingId);
 
     //尝试给指定id的training_count减1，如果失败返回400状态码
-    @PostMapping("/internal/trainings/{id}/enrollment-count/decrement")
-    RemoteResult<Void> decrement(@PathVariable("id") Long id);
+    @PostMapping("/internal/training/decrement-enrollment-count/{trainingId}")
+    RemoteResult<Void> decrementEnrollmentCount(@PathVariable("trainingId") Long trainingId);
     //补偿恢复，当用户取消报名的时候补偿training减掉的名额
-    @PostMapping("/internal/trainings/{id}/enrollment-count/restore")
-    RemoteResult<Void> restore(@PathVariable("id") Long id);
+    @PostMapping("/internal/training/restore-enrollment-count/{trainingId}")
+    RemoteResult<Void> restoreEnrollmentCount(@PathVariable("trainingId") Long trainingId);
 }

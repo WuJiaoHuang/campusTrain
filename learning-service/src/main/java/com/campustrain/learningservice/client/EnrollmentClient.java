@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 @FeignClient(name = "enrollment-service", contextId = "learningEnrollment")
 public interface EnrollmentClient {
-    @GetMapping("/internal/learning/enrollments/{trainingId}/users/{userId}")
-    RemoteResult<Boolean> active(@PathVariable("trainingId") Long trainingId,
+@GetMapping("/internal/learning/check-enrollment/{trainingId}/user/{userId}")
+    RemoteResult<Boolean> isEnrollmentActive(@PathVariable("trainingId") Long trainingId,
                                  @PathVariable("userId") Long userId);
 }

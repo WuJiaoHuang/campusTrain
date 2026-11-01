@@ -23,37 +23,37 @@ training-service 在阶段 4 新增课程、章节、课时与培训课程目录
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/courses` | 创建课程 |
-| PUT | `/courses` | 修改课程 |
-| GET | `/courses/{id}` | 查询课程详情 |
-| GET | `/courses/training/{trainingId}` | 查询培训下课程 |
-| DELETE | `/courses/{id}` | 删除课程 |
+| POST | `/course/create` | 创建课程 |
+| PUT | `/course/update` | 修改课程 |
+| GET | `/course/get/{id}` | 查询课程详情 |
+| GET | `/course/list/by-training/{trainingId}` | 查询培训下课程 |
+| DELETE | `/course/delete/{id}` | 删除课程 |
 
 ### 章节管理
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/chapters` | 创建章节 |
-| PUT | `/chapters` | 修改章节 |
-| GET | `/chapters/course/{courseId}` | 查询课程下章节 |
-| PUT | `/chapters/sort` | 章节排序 |
-| DELETE | `/chapters/{id}` | 删除章节 |
+| POST | `/chapter/create` | 创建章节 |
+| PUT | `/chapter/update` | 修改章节 |
+| GET | `/chapter/list/by-course/{courseId}` | 查询课程下章节 |
+| PUT | `/chapter/update/sort` | 章节排序 |
+| DELETE | `/chapter/delete/{id}` | 删除章节 |
 
 ### 课时管理
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/lessons` | 创建课时 |
-| PUT | `/lessons` | 修改课时 |
-| GET | `/lessons/chapter/{chapterId}` | 查询章节下课时 |
-| PUT | `/lessons/sort` | 课时排序 |
-| DELETE | `/lessons/{id}` | 删除课时 |
+| POST | `/lesson/create` | 创建课时 |
+| PUT | `/lesson/update` | 修改课时 |
+| GET | `/lesson/list/by-chapter/{chapterId}` | 查询章节下课时 |
+| PUT | `/lesson/update/sort` | 课时排序 |
+| DELETE | `/lesson/delete/{id}` | 删除课时 |
 
 ### 培训课程目录
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/trainings/{trainingId}/catalog` | 查询培训课程目录 |
+| GET | `/training/get/catalog/{trainingId}` | 查询培训课程目录 |
 
 目录接口按 Course、Chapter、Lesson 三次批量查询组装树形结构，避免在循环中查询数据库。
 
@@ -93,11 +93,11 @@ flowchart TD
 
 | 服务 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
-| user-service | POST | `/users` | 创建用户，密码写入 BCrypt 哈希 |
-| user-service | GET | `/users/{id}` | 查询用户详情 |
-| user-service | GET | `/users/page` | 分页查询用户 |
-| user-service | PUT | `/users` | 修改 nickname、role、status |
-| user-service | DELETE | `/users/{id}` | 删除用户 |
+| user-service | POST | `/user/create` | 创建用户，密码写入 BCrypt 哈希 |
+| user-service | GET | `/user/get/{id}` | 查询用户详情 |
+| user-service | GET | `/user/list/page` | 分页查询用户 |
+| user-service | PUT | `/user/update` | 修改 nickname、role、status |
+| user-service | DELETE | `/user/delete/{id}` | 删除用户 |
 
 ### 认证接口
 
@@ -138,12 +138,12 @@ Client
   |
   v
 enrollment-service
-  |-- Feign (user-service -> Nacos -> LoadBalancer -> HTTP GET /users/{id})
+  |-- Feign (user-service -> Nacos -> LoadBalancer -> HTTP GET /user/get/{id})
   |     |
   |     v
   |  campus_user
   |
-  `-- Feign (training-service -> Nacos -> LoadBalancer -> HTTP GET /trainings/{id})
+  `-- Feign (training-service -> Nacos -> LoadBalancer -> HTTP GET /internal/training/get-enrollment-check/{id})
         |
         v
      campus_training
@@ -157,7 +157,7 @@ Feign Client 使用服务名发现实例，不配置服务 IP 或 URL；Nacos �
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/enrollments` | 创建培训报名，成功返回报名 ID |
+| POST | `/enrollment/create` | 创建培训报名，成功返回报名 ID |
 
 阶段 6 为验证 Feign 链路，`userId` 曾暂由 `EnrollmentCreateDTO` 请求体传入；阶段 7 后报名请求只传 `trainingId`，用户身份由 Gateway 透传的上下文提供。
 
@@ -203,7 +203,7 @@ Client
 
 客户端传入的 `X-User-Id`、`X-User-Role`、`X-Username` 与 `X-Trace-Id` 不可信。Gateway 会先移除身份 Header，再以 JWT Claims 生成真实身份 Header；TraceId 由 Gateway 为每个请求生成新的 UUID，覆盖客户端值。enrollment-service 的 Servlet Filter 将可信 Header 写入 ThreadLocal `UserContext`，并在 `finally` 中清理，避免线程复用污染。
 
-阶段 7 后 `POST /enrollments` 的请求体只包含 `trainingId`，不再接收 `userId`。报名服务仍会通过 Feign 查询 user-service 做最终用户状态和角色校验。
+阶段 7 后 `POST /enrollment/create` 的请求体只包含 `trainingId`，不再接收 `userId`。报名服务仍会通过 Feign 查询 user-service 做最终用户状态和角色校验。
 
 ## 阶段 8：Nacos 配置中心
 
@@ -245,7 +245,7 @@ Gateway 和 auth-service 使用同一 `JWT_SECRET` 环境变量，未设置时�
 `TrainingFeatureProperties` 使用 `@ConfigurationProperties` 和 `@RefreshScope`，`TrainingServiceImpl` 在创建培训前检查 `campustrain.training.allow-create`；它不影响其他 CRUD。导入地址包含 `refreshEnabled=true`，Nacos 配置变更会触发刷新，无需重新打包或重启。
 
 1. 启动 Nacos，创建并发布上述六份 dev 配置；本地可使用默认数据库凭据，按需设置环境变量和 JWT Secret，然后启动五个服务。
-2. 确认 `training-service-dev.yaml` 中 `allow-create: true`，向 training-service 的 `POST /trainings` 发送合法请求，确认创建成功。
+2. 确认 `training-service-dev.yaml` 中 `allow-create: true`，向 training-service 的 `POST /training/create` 发送合法请求，确认创建成功。
 3. 在 Nacos 的 `campustrain-dev / CAMPUS_TRAIN / training-service-dev.yaml` 将其改为 `false` 并发布；等待配置刷新后再次请求，确认返回 `当前已关闭培训创建功能`。
 4. 改回 `true` 并发布；不重启服务再次请求，确认恢复创建。注意不要用更高优先级的环境变量或命令行参数固定该属性。
 
@@ -258,7 +258,7 @@ Client -> Gateway -> lb://training-service -> Nacos 实例列表 -> LoadBalancer
 Client -> Gateway -> enrollment-service -> TrainingClient -> Nacos 实例列表 -> LoadBalancer -> training instance
 ```
 
-`GET /trainings/instance` 返回统一 `Result`，其中 `data` 包含应用名、实际监听端口和 `应用名:端口` 实例标识。通过 Gateway 访问仍需 JWT；该标识用于本机多端口实验，并非跨主机全局唯一标识。培训详情日志同时包含 `traceId`、`trainingId` 和实例标识。
+`GET /training/get/instance` 返回统一 `Result`，其中 `data` 包含应用名、实际监听端口和 `应用名:端口` 实例标识。通过 Gateway 访问仍需 JWT；该标识用于本机多端口实验，并非跨主机全局唯一标识。培训详情日志同时包含 `traceId`、`trainingId` 和实例标识。
 
 ### 启动与发现
 
@@ -280,7 +280,7 @@ java -jar training-service/target/training-service-0.0.1-SNAPSHOT.jar --server.p
 ```powershell
 $login = Invoke-RestMethod -Method Post http://localhost:8080/auth/login -ContentType 'application/json' -Body '{"username":"student01","password":"123456"}'
 $headers = @{ Authorization = "Bearer $($login.data.token)" }
-1..12 | ForEach-Object { (Invoke-RestMethod http://localhost:8080/trainings/instance -Headers $headers).data }
+1..12 | ForEach-Object { (Invoke-RestMethod http://localhost:8080/training/get/instance -Headers $headers).data }
 ```
 
 连续请求应观察到多个健康实例参与处理，不保证固定顺序。实际端口和实例标识由响应提供，不需要开放 JWT 白名单。
@@ -288,9 +288,9 @@ $headers = @{ Authorization = "Bearer $($login.data.token)" }
 Feign 验证可用一个新建、保持草稿状态的培训：
 
 ```powershell
-$draft = Invoke-RestMethod -Method Post http://localhost:8080/trainings -Headers $headers -ContentType 'application/json' -Body '{"title":"Stage9 Feign 测试草稿","teacherId":1,"capacity":10}'
+$draft = Invoke-RestMethod -Method Post http://localhost:8080/training/create -Headers $headers -ContentType 'application/json' -Body '{"title":"Stage9 Feign 测试草稿","teacherId":1,"capacity":10}'
 $body = @{ trainingId = $draft.data } | ConvertTo-Json
-1..12 | ForEach-Object { try { Invoke-RestMethod -Method Post http://localhost:8080/enrollments -Headers $headers -ContentType 'application/json' -Body $body } catch { $_.ErrorDetails.Message } }
+1..12 | ForEach-Object { try { Invoke-RestMethod -Method Post http://localhost:8080/enrollment/create -Headers $headers -ContentType 'application/json' -Body $body } catch { $_.ErrorDetails.Message } }
 ```
 
 创建开关需为 `true`，账号需为启用的 STUDENT。草稿每次都会经 Feign 查询培训，再因不在报名状态被业务校验拒绝，不会产生报名记录；这避免了成功报名后的重复报名预检查。查看三个 training 终端的 `training enrollment check` 日志，应能看到相同培训 ID 和多个实例标识；TraceId 可关联 Gateway 和 enrollment 日志。
@@ -334,11 +334,11 @@ $body = @{ trainingId = $draft.data } | ConvertTo-Json
 
 ### Feign 故障与恢复
 
-使用启用的 STUDENT 和尚未报名的培训 ID，记录 `campus_enrollment.enrollment` 对应 user_id/training_id 的行数。停止所有 training 实例，等待 Nacos 摘除和 LoadBalancer 缓存更新，通过 Gateway 提交 `POST /enrollments`，请求体仅 `{"trainingId":90001}`：预期 HTTP 503、`培训服务暂时不可用`，行数不变。重启 training 并等待健康注册，重新调用应恢复原有报名校验；只有所有真实校验通过才可能写入。类似地停止 user-service 应返回 HTTP 503、`用户服务暂时不可用`，且不落库。报名内部培训校验限流导致 Feign 失败时也返回受控 503，不返回假培训信息；普通详情限流和熔断不应影响独立的内部校验资源。运行实验时避免对真实用户和真实培训产生意外报名。
+使用启用的 STUDENT 和尚未报名的培训 ID，记录 `campus_enrollment.enrollment` 对应 user_id/training_id 的行数。停止所有 training 实例，等待 Nacos 摘除和 LoadBalancer 缓存更新，通过 Gateway 提交 `POST /enrollment/create`，请求体仅 `{"trainingId":90001}`：预期 HTTP 503、`培训服务暂时不可用`，行数不变。重启 training 并等待健康注册，重新调用应恢复原有报名校验；只有所有真实校验通过才可能写入。类似地停止 user-service 应返回 HTTP 503、`用户服务暂时不可用`，且不落库。报名内部培训校验限流导致 Feign 失败时也返回受控 503，不返回假培训信息；普通详情限流和熔断不应影响独立的内部校验资源。运行实验时避免对真实用户和真实培训产生意外报名。
 
 ### Stage 10 三层流量治理与基准
 
-报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /trainings/{id}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/trainings/{id}/enrollment-check` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
+报名链为 `Gateway enrollment-service route -> enrollment-create -> Feign -> training-enrollment-check`；普通 `GET /training/get/{id}` 仍是独立的 `training-detail`。报名内部接口 `GET /internal/training/get-enrollment-check/{id}` 只返回报名字段，不经 Gateway 暴露；它没有独立鉴权，必须通过防火墙或服务网络禁止外部直连 training 端口。资源拆分是不同业务容量预算，不是给报名多分线程，也不是数据库或线程池隔离。依赖失败与任一层 Block 均不得伪造成功或继续落库。
 
 Nacos namespace `campustrain-dev`、group `CAMPUS_TRAIN`：`training-service-sentinel-flow-dev.json` 包含两条 training Flow Rule；`training-service-sentinel-degrade-dev.json` 保留详情熔断；`enrollment-service-sentinel-flow-dev.json` 是报名 Flow Rule；`campus-gateway-sentinel-flow-dev.json` 是 route ID 为 `enrollment-service` 的 `gw-flow` 规则。Dashboard 只观察，规则以 Nacos 为准。最终阈值已实测并回写：`training-detail` 800、`training-enrollment-check` 750（均为每个 training JVM 实例），`enrollment-create` 160（每个 enrollment 实例），Gateway 路由 `enrollment-service` 150（每个 Gateway 实例）。这些值来自单机实验，不是生产承诺；详情见 [benchmark-results.md](docs/stage10/benchmark-results.md) 和 [sentinel-thresholds.md](docs/stage10/sentinel-thresholds.md)。Gateway 只有 1 个实例时 150 才是该拓扑的入口总预算；多 Gateway 必须另测。三台 training 的集群峰值实测 1,266 QPS，仅为单实例直连峰值的 1.09 倍，不能把额度简单乘三。
 
@@ -359,10 +359,10 @@ JTL、HTML 报告和拓扑 JSON 输出在 `scripts/stage10/jmeter/results/`，�
 
 报名身份来自 Gateway 验证 JWT 后写入的 `UserContext`，不接受请求体里的用户 ID；服务端口及内部 `/internal/**` 接口应仅对可信服务网络开放，不能把客户端传入的身份头当作可信身份。
 
-- `POST /enrollments`：请求体 `{"trainingId":912001}`。只允许启用的学生，检查培训状态、窗口和容量；重复报名拒绝，取消后重新报名复用原记录并保留创建时间。
-- `PUT /enrollments/{enrollmentId}/cancel`：只能取消自己的已报名记录，状态改为取消，不删除。
-- `GET /enrollments/me?page=1&size=10&status=1`：我的报名分页；`status` 可省略。
-- `GET /enrollments/trainings/{trainingId}?page=1&size=10&status=1`：报名名单分页，管理员可查，教师只能查自己负责的培训；学生不可查。返回报名记录，不逐条远程查询用户。
+- `POST /enrollment/create`：请求体 `{"trainingId":912001}`。只允许启用的学生，检查培训状态、窗口和容量；重复报名拒绝，取消后重新报名复用原记录并保留创建时间。
+- `POST /enrollment/cancel/{enrollmentId}`：只能取消自己的已报名记录，状态改为取消，不删除。
+- `GET /enrollment/list/mine?page=1&size=10&status=1`：我的报名分页；`status` 可省略。
+- `GET /enrollment/list/by-training/{trainingId}?page=1&size=10&status=1`：报名名单分页，管理员可查，教师只能查自己负责的培训；学生不可查。返回报名记录，不逐条远程查询用户。
 
 报名状态：`0=CANCELLED`、`1=ENROLLED`。用户与培训仍分别通过 Feign 访问，保留唯一约束 `uk_user_training(user_id, training_id)`。培训端使用条件 SQL 原子占用容量并重新检查状态与窗口；取消时条件减一，不能减到负数。报名本地事务提交失败时同步尝试减回；取消本地事务提交失败时同步尝试恢复计数，补偿失败记录 ERROR。
 
@@ -380,7 +380,7 @@ HAVING t.enrolled_count <> COUNT(e.id);
 
 ## Stage 13：Redis + Caffeine 两级缓存
 
-training-service 对 `GET /trainings/{id}` 和 `GET /trainings/{id}/catalog` 使用 Cache Aside：Caffeine L1 -> Redis L2 -> MySQL。Key 分别为 `campustrain:training:detail:{id}` 与 `campustrain:training:catalog:{id}`；空结果使用专用标记，绝不伪造 `TrainingVO`。默认 L1 TTL 为 45 秒，详情/目录 Redis TTL 为 8 分钟，空值 TTL 为 45 秒，正常 Redis TTL 再加 0 至 30 秒随机抖动。所有值可在 Nacos `training-service-dev.yaml` 的 `campustrain.cache` 调整；Redis 默认 `192.168.10.102:6379`、密码 `123456`，可由 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 覆盖。
+training-service 对 `GET /training/get/{id}` 和 `GET /training/get/catalog/{id}` 使用 Cache Aside：Caffeine L1 -> Redis L2 -> MySQL。Key 分别为 `campustrain:training:detail:{id}` 与 `campustrain:training:catalog:{id}`；空结果使用专用标记，绝不伪造 `TrainingVO`。默认 L1 TTL 为 45 秒，详情/目录 Redis TTL 为 8 分钟，空值 TTL 为 45 秒，正常 Redis TTL 再加 0 至 30 秒随机抖动。所有值可在 Nacos `training-service-dev.yaml` 的 `campustrain.cache` 调整；Redis 默认 `192.168.10.102:6379`、密码 `123456`，可由 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 覆盖。
 
 首次 miss 会回源并填充两级缓存；不存在的 ID 只在第一次回源，随后命中短 TTL 空值标记，防止穿透。同一 JVM 的同一个 miss key 使用每 key single-flight 锁，避免热点失效时多线程同时击穿 DB；不同 key 不互相串行。该锁不是分布式锁，多 training 实例之间不协调。Redis TTL 抖动与较短的独立 L1 TTL 缓解雪崩。
 

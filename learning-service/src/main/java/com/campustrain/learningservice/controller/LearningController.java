@@ -26,41 +26,41 @@ public class LearningController {
         this.learningService = learningService;
     }
 
-    @PostMapping("/lessons/{lessonId}/start")
+    @PostMapping("/start/{lessonId}")
     @Operation(summary = "开始视频学习")
-    public ApiResult<LearningStartVO> start(@PathVariable("lessonId") Long lessonId) {
-        return ApiResult.ok(learningService.start(lessonId));
+    public ApiResult<LearningStartVO> startLearning(@PathVariable("lessonId") Long lessonId) {
+        return ApiResult.ok(learningService.startLearning(lessonId));
     }
 
-    @PostMapping("/lessons/{lessonId}/progress")
+    @PostMapping("/report-progress/{lessonId}")
     @Operation(summary = "上报视频学习进度")
-    public ApiResult<LearningProgressVO> update(@PathVariable("lessonId") Long lessonId,
+    public ApiResult<LearningProgressVO> updateLearningProgress(@PathVariable("lessonId") Long lessonId,
                                                  @Valid @RequestBody ProgressRequest request) {
-        return ApiResult.ok(learningService.update(lessonId, request.progressSeconds()));
+        return ApiResult.ok(learningService.updateLearningProgress(lessonId, request.progressSeconds()));
     }
 
-    @GetMapping("/lessons/{lessonId}/progress")
+    @GetMapping("/get-progress/{lessonId}")
     @Operation(summary = "查询学习进度")
-    public ApiResult<LearningProgressVO> get(@PathVariable("lessonId") Long lessonId) {
-        return ApiResult.ok(learningService.getProgress(lessonId));
+    public ApiResult<LearningProgressVO> getLearningProgress(@PathVariable("lessonId") Long lessonId) {
+        return ApiResult.ok(learningService.getLearningProgress(lessonId));
     }
 
-    @PostMapping("/lessons/{lessonId}/complete")
+    @PostMapping("/complete/{lessonId}")
     @Operation(summary = "完成图文课时")
-    public ApiResult<Void> complete(@PathVariable("lessonId") Long lessonId) {
-        learningService.complete(lessonId);
+    public ApiResult<Void> completeTextLesson(@PathVariable("lessonId") Long lessonId) {
+        learningService.completeTextLesson(lessonId);
         return ApiResult.ok(null);
     }
 
-    @GetMapping("/trainings/{trainingId}/progress")
+    @GetMapping("/get/training-progress/{trainingId}")
     @Operation(summary = "查询培训完成度")
-    public ApiResult<LearningSummaryVO> trainingProgress(@PathVariable("trainingId") Long trainingId) {
-        return ApiResult.ok(learningService.trainingProgress(trainingId));
+    public ApiResult<LearningSummaryVO> getTrainingProgress(@PathVariable("trainingId") Long trainingId) {
+        return ApiResult.ok(learningService.getTrainingProgress(trainingId));
     }
 
-    @GetMapping("/chapters/{chapterId}/progress")
+    @GetMapping("/get/chapter-progress/{chapterId}")
     @Operation(summary = "查询章节完成度")
-    public ApiResult<LearningSummaryVO> chapterProgress(@PathVariable("chapterId") Long chapterId) {
-        return ApiResult.ok(learningService.chapterProgress(chapterId));
+    public ApiResult<LearningSummaryVO> getChapterProgress(@PathVariable("chapterId") Long chapterId) {
+        return ApiResult.ok(learningService.getChapterProgress(chapterId));
     }
 }

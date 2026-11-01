@@ -109,7 +109,7 @@ public class GrowthServiceImpl implements GrowthService {
         return true;
     }
 
-    public List<RankView> top(String key, int limit) {
+    public List<RankView> getTopRanking(String key, int limit) {
         var users = stringRedisTemplate.opsForZSet().reverseRange(key, 0, limit - 1);
         if (users == null || users.isEmpty()) return List.of();
         List<RankView> result = new ArrayList<>();
@@ -121,7 +121,7 @@ public class GrowthServiceImpl implements GrowthService {
         return result;
     }
 
-    public RankView mine(String key, long userId) {
+    public RankView getMyRanking(String key, long userId) {
         String member = String.valueOf(userId);
         Long rank = stringRedisTemplate.opsForZSet().reverseRank(key, member);
         Double score = stringRedisTemplate.opsForZSet().score(key, member);
@@ -131,13 +131,13 @@ public class GrowthServiceImpl implements GrowthService {
     /** Rebuilds Redis from MySQL without changing the points facts. */
     public void rebuild(String month) {
         stringRedisTemplate.delete(TOTAL_RANKING_KEY);
-        for (UserPoints row : growthMapper.totalPoints()) {
+        for (UserPoints row : growthMapper.selectTotalPoints()) {
             stringRedisTemplate.opsForZSet().add(TOTAL_RANKING_KEY, String.valueOf(row.userId()), row.points());
         }
         if (month != null && !month.isBlank()) {
             String key = GrowthService.monthRankingKey(month);
             stringRedisTemplate.delete(key);
-            for (UserPoints row : growthMapper.monthlyPoints(month)) {
+            for (UserPoints row : growthMapper.selectMonthlyPoints(month)) {
                 stringRedisTemplate.opsForZSet().add(key, String.valueOf(row.userId()), row.points());
             }
         }
@@ -150,24 +150,24 @@ public class GrowthServiceImpl implements GrowthService {
         String seasonCode = requestedSeason == null || requestedSeason.isBlank()
                 ? YearMonth.now(BUSINESS_ZONE).minusMonths(1).toString() : requestedSeason;
         log.info("season settlement started, seasonCode={}", seasonCode);
-        growthMapper.ensureSeason(seasonCode);
-        Long seasonId = growthMapper.lockedSeasonId(seasonCode);
-        String current = growthMapper.seasonStatus(seasonId);
+        growthMapper.insertSeasonIfAbsent(seasonCode);
+        Long seasonId = growthMapper.selectSeasonIdForUpdate(seasonCode);
+        String current = growthMapper.selectSeasonStatus(seasonId);
         if ("SETTLED".equals(current)) {
-            growthMapper.recordExecution(seasonCode, "DONE");
+            growthMapper.upsertJobExecution(seasonCode, "DONE");
             log.info("season already settled, seasonCode={}", seasonCode);
             return;
         }
-        growthMapper.recordExecution(seasonCode, "RUNNING");
-        List<UserPoints> ranks = growthMapper.seasonPoints(seasonCode);
+        growthMapper.upsertJobExecution(seasonCode, "RUNNING");
+        List<UserPoints> ranks = growthMapper.selectSeasonPoints(seasonCode);
         long rank = 1;
         for (UserPoints row : ranks) {
             growthMapper.insertHistory(seasonId, seasonCode, row.userId(), row.points(), rank++);
         }
-        growthMapper.settleSeason(seasonId);
+        growthMapper.updateSeasonSettled(seasonId);
         YearMonth next = YearMonth.parse(seasonCode).plusMonths(1);
-        growthMapper.ensureSeason(next.toString());
-        growthMapper.recordExecution(seasonCode, "DONE");
+        growthMapper.insertSeasonIfAbsent(next.toString());
+        growthMapper.upsertJobExecution(seasonCode, "DONE");
         log.info("season settled, seasonCode={}, rankedUsers={}", seasonCode, ranks.size());
     }
 

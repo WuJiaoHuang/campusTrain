@@ -56,7 +56,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     }
 
     @Override
-    public Long enroll(EnrollmentCreateDTO dto) {
+    public Long createEnrollment(EnrollmentCreateDTO dto) {
         Long userId = getCurrentUserId();
         validateGatewayRole();
         String traceId = UserContext.getTraceId();
@@ -88,7 +88,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
 
         AtomicBoolean countIncremented = new AtomicBoolean();
         try {
-            callCount(() -> trainingClient.increment(dto.getTrainingId()), dto.getTrainingId(), true);
+            callCount(() -> trainingClient.incrementEnrollmentCount(dto.getTrainingId()), dto.getTrainingId(), true);
             countIncremented.set(true);
             Long id = new TransactionTemplate(transactionManager).execute(tx -> {
                 Enrollment existing = getOne(new LambdaQueryWrapper<Enrollment>()
@@ -123,7 +123,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
             return id;
         } catch (RuntimeException e) {
             if (countIncremented.get()) {
-                compensate(() -> trainingClient.decrement(dto.getTrainingId()), userId, dto.getTrainingId(), "decrement", e);
+                compensate(() -> trainingClient.decrementEnrollmentCount(dto.getTrainingId()), userId, dto.getTrainingId(), "decrement", e);
             }
             releaseReservation(userId, dto.getTrainingId(), "enroll-rollback", e);
             if (e instanceof DuplicateKeyException) throw new BusinessException("请勿重复报名");
@@ -132,7 +132,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     }
 
     @Override
-    public void cancel(Long enrollmentId) {
+    public void cancelEnrollment(Long enrollmentId) {
         Long userId = getCurrentUserId();
         AtomicBoolean released = new AtomicBoolean();
         AtomicBoolean redisReleased = new AtomicBoolean();
@@ -158,7 +158,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
                         .set(Enrollment::getStatus, EnrollmentStatus.CANCELLED.getCode())
                         .set(Enrollment::getUpdateTime, LocalDateTime.now()));
                 if (!updated) throw new BusinessException("报名状态已变化，请重试");
-                callCount(() -> trainingClient.decrement(trainingId[0]), trainingId[0], false);
+                callCount(() -> trainingClient.decrementEnrollmentCount(trainingId[0]), trainingId[0], false);
                 released.set(true);
                 ReservationResult result = reservationService.release(trainingId[0], userId);
                 if (result != ReservationResult.SUCCESS) {
@@ -172,7 +172,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
             if (redisReleased.get()) {
                 restoreReservation(userId, trainingId[0], e);
             }
-            if (released.get()) compensate(() -> trainingClient.restore(trainingId[0]), userId, trainingId[0], "restore", e);
+            if (released.get()) compensate(() -> trainingClient.restoreEnrollmentCount(trainingId[0]), userId, trainingId[0], "restore", e);
             throw e;
         }
     }
@@ -342,7 +342,7 @@ public class EnrollmentServiceImpl extends ServiceImpl<EnrollmentMapper, Enrollm
     private RemoteTrainingEnrollmentCheckVO getRemoteTraining(Long trainingId) {
         RemoteResult<RemoteTrainingEnrollmentCheckVO> result;
         try {
-            result = trainingClient.getTrainingById(trainingId);
+            result = trainingClient.getTrainingEnrollmentCheck(trainingId);
         } catch (FeignException e) {
             log.error("remote training query failed, traceId={}, trainingId={}, httpStatus={}",
                     UserContext.getTraceId(), trainingId, e.status(), e);

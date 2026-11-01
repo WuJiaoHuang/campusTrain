@@ -15,7 +15,7 @@ try {
     for ($round = 1; $round -le $Rounds; $round++) {
         $tasks = @()
         for ($i = 0; $i -lt $RequestsPerRound; $i++) {
-            $tasks += $client.GetAsync("$($BaseUrl.TrimEnd('/'))/trainings/$TrainingId")
+            $tasks += $client.GetAsync("$($BaseUrl.TrimEnd('/'))/training/get/$TrainingId")
         }
         foreach ($task in $tasks) {
             try {

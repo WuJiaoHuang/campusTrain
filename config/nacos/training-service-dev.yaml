@@ -1,6 +1,6 @@
 springdoc:
   packages-to-scan: com.campustrain.trainingservice.controller
-  paths-to-match: /trainings/**,/courses/**,/chapters/**,/lessons/**,/videos/**
+  paths-to-match: /training/**,/course/**,/chapter/**,/lesson/**,/video/**
 
 campustrain:
   oss:

@@ -1,5 +1,6 @@
 package com.campustrain.learningservice.service;
 
+import com.campustrain.learningservice.mapper.LearningOutboxMapper;
 import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -12,34 +13,32 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 public class LearningOutboxPublisher {
-    private final RabbitTemplate rabbit;
-    private final JdbcTemplate jdbc;
+    private final RabbitTemplate rabbitTemplate;
+    private final LearningOutboxMapper learningOutboxMapper;
     private final Map<String, Long> inFlight = new ConcurrentHashMap<>();
 
-    public LearningOutboxPublisher(RabbitTemplate rabbit, JdbcTemplate jdbc) {
-        this.rabbit = rabbit;
-        this.jdbc = jdbc;
+    public LearningOutboxPublisher(RabbitTemplate rabbitTemplate, LearningOutboxMapper learningOutboxMapper) {
+        this.rabbitTemplate = rabbitTemplate;
+        this.learningOutboxMapper = learningOutboxMapper;
     }
 
     @PostConstruct
     void configure() {
-        rabbit.setMandatory(true);
-        rabbit.setReturnsCallback(returned -> log.error("learning event returned, eventId={}, reason={}",
+        rabbitTemplate.setMandatory(true);
+        rabbitTemplate.setReturnsCallback(returned -> log.error("learning event returned, eventId={}, reason={}",
                 returned.getMessage().getMessageProperties().getHeaders().get("eventId"), returned.getReplyText()));
     }
 
     @Scheduled(fixedDelayString = "${campustrain.learning.outbox-interval-ms:5000}")
     public void publish() {
         try {
-            List<Map<String, Object>> events = jdbc.queryForList(
-                    "SELECT event_id,payload FROM event_outbox WHERE status='NEW' ORDER BY id LIMIT 50");
+            List<Map<String, Object>> events = learningOutboxMapper.selectNewEvents();
             for (Map<String, Object> event : events) {
                 send(event);
             }
@@ -72,15 +71,14 @@ public class LearningOutboxPublisher {
                         failed(id, reason);
                         log.error("learning event not delivered, eventId={}, reason={}", id, reason, error);
                     } else {
-                        jdbc.update("UPDATE event_outbox SET status='SENT',update_time=? WHERE event_id=? AND status='NEW'",
-                                LocalDateTime.now(), id);
+                        learningOutboxMapper.markSent(id, LocalDateTime.now());
                         log.info("learning completed event confirmed, eventId={}", id);
                     }
                 } catch (Exception exception) {
                     log.error("learning outbox confirmation update failed, eventId={}", id, exception);
                 }
             });
-            rabbit.send("campustrain.business.exchange", "learning.completed",
+            rabbitTemplate.send("campustrain.business.exchange", "learning.completed",
                     new Message(event.get("payload").toString().getBytes(StandardCharsets.UTF_8), properties), correlation);
         } catch (Exception exception) {
             inFlight.remove(id, now);
@@ -94,7 +92,6 @@ public class LearningOutboxPublisher {
     }
 
     private void failed(String id, String reason) {
-        jdbc.update("UPDATE event_outbox SET retry_count=retry_count+1,last_error=?,update_time=? WHERE event_id=? AND status='NEW'",
-                reason.substring(0, Math.min(reason.length(), 500)), LocalDateTime.now(), id);
+        learningOutboxMapper.recordFailure(id, reason.substring(0, Math.min(reason.length(), 500)), LocalDateTime.now());
     }
 }

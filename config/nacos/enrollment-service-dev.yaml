@@ -1,6 +1,6 @@
 springdoc:
   packages-to-scan: com.campustrain.enrollmentservice.controller
-  paths-to-match: /enrollments/**
+  paths-to-match: /enrollment/**
 spring:
   rabbitmq:
     host: ${RABBITMQ_HOST:192.168.10.102}

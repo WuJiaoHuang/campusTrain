@@ -6,13 +6,16 @@ community-service 运行于 8090，Gateway 通过 `/community/** → lb://commun
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| POST | `/community/questions` | 创建问题，学生须有有效报名 |
-| GET | `/community/questions?trainingId=&lessonId=&page=&size=` | 分页问题 |
-| GET | `/community/questions/{id}` | 问题详情、回答、评论、实时点赞 |
-| POST | `/community/questions/{questionId}/answers` | 创建回答并原子增加 `answer_count` |
-| GET | `/community/questions/{questionId}/answers?page=&size=` | 分页回答 |
-| POST/GET | `/community/comments` | 创建、按目标分页查询一层评论 |
-| POST/DELETE/GET | `/community/likes` | 点赞、取消、查询当前用户点赞状态 |
+| POST | `/community/create/question` | 创建问题，学生须有有效报名 |
+| GET | `/community/list/questions?trainingId=&lessonId=&page=&size=` | 分页问题 |
+| GET | `/community/get/question/{id}` | 问题详情、回答、评论、实时点赞 |
+| POST | `/community/create/answer/{questionId}` | 创建回答并原子增加 `answer_count` |
+| GET | `/community/list/answers/{questionId}?page=&size=` | 分页回答 |
+| POST | `/community/create/comment` | 创建评论 |
+| GET | `/community/list/comments` | 按目标分页查询一层评论 |
+| POST | `/community/like` | 点赞 |
+| POST | `/community/unlike` | 取消点赞 |
+| GET | `/community/get/like-status` | 查询当前用户点赞状态 |
 
 请求中 `targetType` 仅接受 `QUESTION`、`ANSWER`。问题创建通过 Feign 检查培训；有课时/课程时核对归属。学生还通过 enrollment-service 检查有效报名。问题、回答、评论和点赞关系分别由 MySQL 本地事务或 Redis 原子脚本维护。
 
@@ -48,7 +51,7 @@ Redis 故障时点赞/取消返回 503；查询可回退 MySQL 已刷盘数据�
 
 ## 2026-10-30 开发环境实测
 
-- community-service 8090 与 Growth 8088 启动并加载 Nacos；Gateway 登录后访问 `/community/questions/18002` 返回 200，未带 JWT 返回 401。请求伪造 `X-User-Id: 999` 后，数据库实际 `user_id=1001`。
+- community-service 8090 与 Growth 8088 启动并加载 Nacos；Gateway 登录后访问 `/community/get/question/18002` 返回 200，未带 JWT 返回 401。请求伪造 `X-User-Id: 999` 后，数据库实际 `user_id=1001`。
 - 创建问题后列表/详情可查；创建回答后 `question.answer_count=1`；评论列表查询成功。提问事件到账 +2、回答事件到账 +5；Outbox 均变为 `SENT`。重复投递同一 `eventId` 后 Growth 流水仍仅一条。
 - 点赞、重复点赞、取消、重复取消依次得到 count 1/1/0/0，重复请求的 `changed=false`。真实 Redis/MySQL 集成测试的 40 个同用户并发点赞仅一条生效；4 个用户各重复 5 次后 count=4。刷盘后关系数与 count 均为 4，删 Redis Key 后可从 MySQL 重建。旧 revision 的清 dirty Lua 返回 0，dirty 保留。
 - 暂停既有 RabbitMQ 容器时创建问题成功，Outbox 为 `NEW`；恢复后为 `SENT`，Growth 流水增加 2。RabbitMQ 启动约一分钟后可接入，其间 Outbox 重试，不会丢事件。

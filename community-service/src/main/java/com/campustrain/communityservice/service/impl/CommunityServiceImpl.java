@@ -67,7 +67,7 @@ public class CommunityServiceImpl implements CommunityService {
             }
         } else if (request.courseId() != null) {
             RemoteResult<Catalog> catalog;
-            try { catalog = trainingClient.getCatalog(request.trainingId()); }
+            try { catalog = trainingClient.getTrainingCatalog(request.trainingId()); }
             catch (FeignException ex) { throw remoteServiceFailure(ex); }
             if (catalog == null || catalog.code() == null || catalog.code() != 200 || catalog.data() == null
                     || catalog.data().courses() == null || catalog.data().courses().stream()

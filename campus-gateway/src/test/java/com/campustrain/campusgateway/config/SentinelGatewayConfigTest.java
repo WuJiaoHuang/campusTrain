@@ -10,7 +10,7 @@ import org.springframework.mock.web.server.MockServerWebExchange;
 class SentinelGatewayConfigTest {
     @Test
     void blockHandlerReturns429() {
-        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/enrollments"));
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post("/enrollment/create"));
         var response = new SentinelGatewayConfig().gatewayBlockRequestHandler()
                 .handleRequest(exchange, new FlowException("enrollment-service")).block();
         assertEquals(429, response.statusCode().value());

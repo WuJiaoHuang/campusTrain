@@ -32,6 +32,10 @@ SQL 由 Agent 负责，不能破坏无关数据库；测试数据必须一致。
 禁止提交 agent.md、.env、真实 AccessKey 或生产 Secret。
 Stage19 仅实现 Docker Compose 全栈部署与健康检查；不实现 Stage20 或更后阶段。
 
+## 全项目长期代码规范
+业务模块统一 Controller → Service 接口 → ServiceImpl → Mapper → MySQL。Controller 只收参、校验、调用 Service、返回响应；Consumer/JobHandler 只做入口，业务交给 Service。所有 MySQL 操作通过 MyBatis/MyBatis-Plus Mapper，禁止业务层使用 JdbcTemplate、NamedParameterJdbcTemplate、Connection、PreparedStatement；Mapper 不做业务判断、Redis、Feign 或 MQ。
+依赖字段按具体类型与职责命名，例如 `trainingClient`、`learningRecordMapper`、`rabbitTemplate`；方法名表达业务动作，布尔方法优先 is/has/can/exists；常量使用大写下划线，DTO/VO/Entity 分离。Controller 路径采用显式动作式 API，内部接口保持 `/internal/**`，同步更新 Feign、Gateway、脚本和文档。Redis key 集中管理，不在 Mapper 中操作 Redis；保持现有业务语义、事务边界和消息契约。
+
 ## Stage19 部署约定
 Compose 文件为根目录 `docker-compose.yml`，文档为 `docs/stage19/README.md`。Docker network 为 `campustrain-net`；服务名为 `mysql`、`redis`、`nacos`、`rabbitmq`、`xxl-job-admin`、`nginx`、`campus-gateway`、`auth-service`、`user-service`、`training-service`、`enrollment-service`、`learning-service`、`growth-service`、`community-service`。容器内用这些服务名通过 Docker DNS 通信；业务统一入口为 `http://<VM_IP>/` 的 Nginx 80 端口。
 持久卷：`campustrain-mysql-data`、`campustrain-redis-data`、`campustrain-rabbitmq-data`（现有 RabbitMQ 卷的别名）、`campustrain-nacos-logs`、`campustrain-xxl-logs`。管理端口分别为 Nacos 8848、RabbitMQ 15672、XXL-JOB 8089。先配置被 Git 忽略的 `.env` 并运行 `mvn clean package -DskipTests`、`docker compose build`、`docker compose up -d`；扩容培训服务用 `docker compose up -d --scale training-service=3`。不要删除旧容器或使用 `docker compose down -v`。

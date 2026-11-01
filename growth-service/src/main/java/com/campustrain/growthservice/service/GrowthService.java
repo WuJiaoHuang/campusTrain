@@ -10,8 +10,8 @@ public interface GrowthService {
 
     boolean award(LearningCompletedEvent event);
     boolean awardCommunity(CommunityActionEvent event);
-    List<RankView> top(String key, int limit);
-    RankView mine(String key, long userId);
+    List<RankView> getTopRanking(String key, int limit);
+    RankView getMyRanking(String key, long userId);
     void rebuild(String month);
     void settle(String requestedSeason);
 

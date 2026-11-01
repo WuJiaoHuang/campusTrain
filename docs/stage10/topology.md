@@ -34,10 +34,10 @@ A 的入口标记：
 
 | 资源 | 入口 | 路径 |
 | --- | --- | --- |
-| training-detail | direct | `http://localhost:8082/trainings/{id}` |
-| training-enrollment-check | direct | `http://localhost:8082/internal/trainings/{id}/enrollment-check` |
-| enrollment-create | direct | `http://localhost:8083/enrollments` + 身份 Header（仅可信内网实验） |
-| gateway-enrollment | gateway | `http://localhost:8080/enrollments` + JWT |
+| training-detail | direct | `http://localhost:8082/training/get/{id}` |
+| training-enrollment-check | direct | `http://localhost:8082/internal/training/get-enrollment-check/{id}` |
+| enrollment-create | direct | `http://localhost:8083/enrollment/create` + 身份 Header（仅可信内网实验） |
+| gateway-enrollment | gateway | `http://localhost:8080/enrollment/create` + JWT |
 
 A 的直连报名和 Gateway 报名使用同一份 enrollment/training/user 数据，结果不能混为一条曲线；文档中分别标注。
 
@@ -56,8 +56,8 @@ A 的直连报名和 Gateway 报名使用同一份 enrollment/training/user 数�
 
 | 资源 | 入口 | 路径 |
 | --- | --- | --- |
-| training-detail | gateway | `http://localhost:8080/trainings/{id}`，经 `training-service` 路由 + LoadBalancer |
-| gateway-enrollment | gateway | `http://localhost:8080/enrollments`，经 `enrollment-service` 路由，再 Feign 到三选一的 training 实例 |
+| training-detail | gateway | `http://localhost:8080/training/get/{id}`，经 `training-service` 路由 + LoadBalancer |
+| gateway-enrollment | gateway | `http://localhost:8080/enrollment/create`，经 `enrollment-service` 路由，再 Feign 到三选一的 training 实例 |
 
 ## 4. 1:1:1 分发证据
 

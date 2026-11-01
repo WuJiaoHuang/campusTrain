@@ -12,29 +12,29 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
-@RequestMapping("/growth/rankings")
+@RequestMapping("/growth")
 class GrowthController {
     private final GrowthService growthService;
     GrowthController(GrowthService growthService) { this.growthService = growthService; }
 
-    @GetMapping("/total")
-    List<RankView> total(@RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return growthService.top(GrowthService.TOTAL_RANKING_KEY, validLimit(limit));
+@GetMapping("/get/total-ranking")
+    List<RankView> getTotalRanking(@RequestParam(name = "limit", defaultValue = "10") int limit) {
+        return growthService.getTopRanking(GrowthService.TOTAL_RANKING_KEY, validLimit(limit));
     }
 
-    @GetMapping("/monthly")
-    List<RankView> monthly(@RequestParam(name = "month") String month, @RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return growthService.top(GrowthService.monthRankingKey(month), validLimit(limit));
+@GetMapping("/get/monthly-ranking")
+    List<RankView> getMonthlyRanking(@RequestParam(name = "month") String month, @RequestParam(name = "limit", defaultValue = "10") int limit) {
+        return growthService.getTopRanking(GrowthService.monthRankingKey(month), validLimit(limit));
     }
 
-    @GetMapping("/me")
-    RankView mine(@RequestHeader(name = "X-User-Id") long userId) {
-        return growthService.mine(GrowthService.TOTAL_RANKING_KEY, userId);
+@GetMapping("/get/my-ranking")
+    RankView getMyRanking(@RequestHeader(name = "X-User-Id") long userId) {
+        return growthService.getMyRanking(GrowthService.TOTAL_RANKING_KEY, userId);
     }
 
-    @GetMapping("/me/monthly")
-    RankView monthlyMine(@RequestParam(name = "month") String month, @RequestHeader(name = "X-User-Id") long userId) {
-        return growthService.mine(GrowthService.monthRankingKey(month), userId);
+@GetMapping("/get/my-monthly-ranking")
+    RankView getMyMonthlyRanking(@RequestParam(name = "month") String month, @RequestHeader(name = "X-User-Id") long userId) {
+        return growthService.getMyRanking(GrowthService.monthRankingKey(month), userId);
     }
 
     private int validLimit(int limit) {

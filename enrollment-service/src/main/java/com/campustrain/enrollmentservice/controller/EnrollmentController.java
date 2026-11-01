@@ -31,17 +31,17 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @Slf4j
 @RequiredArgsConstructor
-@RequestMapping("/enrollments")
+@RequestMapping("/enrollment")
 @Tag(name = "报名管理")
 public class EnrollmentController {
 
     private final EnrollmentService enrollmentService;
 
     @Operation(summary = "创建报名")
-    @PostMapping
+@PostMapping("/create")
     @SentinelResource(value = "enrollment-create", blockHandler = "blocked")
-    public ResponseEntity<Result<Long>> enroll(@Valid @RequestBody EnrollmentCreateDTO dto) {
-        return ResponseEntity.ok(Result.success(enrollmentService.enroll(dto)));
+    public ResponseEntity<Result<Long>> createEnrollment(@Valid @RequestBody EnrollmentCreateDTO dto) {
+        return ResponseEntity.ok(Result.success(enrollmentService.createEnrollment(dto)));
     }
 
     public ResponseEntity<Result<Long>> blocked(EnrollmentCreateDTO dto, BlockException e) {
@@ -53,24 +53,24 @@ public class EnrollmentController {
                 : ResponseEntity.status(503).body(Result.fail(503, "报名服务暂时不可用，请稍后重试"));
     }
 
-    @PutMapping("/{id}/cancel")
+@PostMapping("/cancel/{enrollmentId}")
     @Operation(summary = "取消自己的报名")
-    public Result<Void> cancel(@PathVariable("id") Long id) {
-        enrollmentService.cancel(id);
+    public Result<Void> cancelEnrollment(@PathVariable("enrollmentId") Long enrollmentId) {
+        enrollmentService.cancelEnrollment(enrollmentId);
         return Result.success();
     }
 
-    @GetMapping("/me")
+@GetMapping("/list/mine")
     @Operation(summary = "我的报名")
-    public Result<Page<EnrollmentVO>> mine(@RequestParam(value = "page", defaultValue = "1") @Min(1) long page,
+    public Result<Page<EnrollmentVO>> getMyEnrollments(@RequestParam(value = "page", defaultValue = "1") @Min(1) long page,
             @RequestParam(value = "size", defaultValue = "10") @Min(1) @Max(100) long size,
             @RequestParam(value = "status", required = false) Integer status) {
         return Result.success(enrollmentService.myEnrollments(page, size, status));
     }
 
-    @GetMapping("/trainings/{trainingId}")
+@GetMapping("/list/by-training/{trainingId}")
     @Operation(summary = "培训报名名单")
-    public Result<Page<EnrollmentVO>> roster(@PathVariable("trainingId") Long trainingId,
+    public Result<Page<EnrollmentVO>> getTrainingRoster(@PathVariable("trainingId") Long trainingId,
             @RequestParam(value = "page", defaultValue = "1") @Min(1) long page,
             @RequestParam(value = "size", defaultValue = "10") @Min(1) @Max(100) long size,
             @RequestParam(value = "status", required = false) Integer status) {

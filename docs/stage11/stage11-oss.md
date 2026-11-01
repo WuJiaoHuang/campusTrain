@@ -2,7 +2,7 @@
 
 ## 流程和配置
 
-training-service 仅签发短期地址和维护元数据，不接收或转发视频字节。客户端先调用 `POST /videos/upload-url`，使用返回的 URL 直接向 OSS 发送 PUT，且 `Content-Type` 必须与申请时一致；完成后调用 `PUT /lessons/{id}/video`，服务通过 OSS HEAD 验证对象、大小和类型后更新课时。播放时 `GET /lessons/{id}/video/play-url` 动态签发短期 GET 地址。网关要求 JWT，地址不要写入数据库或日志。
+training-service 仅签发短期地址和维护元数据，不接收或转发视频字节。客户端先调用 `POST /video/create/upload-url`，使用返回的 URL 直接向 OSS 发送 PUT，且 `Content-Type` 必须与申请时一致；完成后调用 `PUT /lesson/bind-video/{id}`，服务通过 OSS HEAD 验证对象、大小和类型后更新课时。播放时 `GET /lesson/create/play-url/{id}` 动态签发短期 GET 地址。网关要求 JWT，地址不要写入数据库或日志。
 
 Bucket 必须是 Private；本地默认北京 `https://oss-cn-beijing.aliyuncs.com`、`cn-beijing` 和 `java-ai-wujiaohuang`。`OSS_ENDPOINT`、`OSS_REGION`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` 可通过环境变量配置；本地开发也可写入项目根目录被 Git 忽略的 `.env`。切勿将真实凭据写入 Git。非敏感默认值位于 `config/nacos/training-service-dev.yaml` 和本地配置，Nacos 使用 Stage 8 的 `campustrain-dev` / `CAMPUS_TRAIN`。上传和播放地址默认 900 / 600 秒，最大视频大小默认 500 MiB。
 

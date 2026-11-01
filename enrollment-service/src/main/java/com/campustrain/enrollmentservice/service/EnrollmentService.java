@@ -6,9 +6,9 @@ import com.campustrain.enrollmentservice.vo.EnrollmentVO;
 
 public interface EnrollmentService {
 
-    Long enroll(EnrollmentCreateDTO dto);
+    Long createEnrollment(EnrollmentCreateDTO dto);
 
-    void cancel(Long enrollmentId);
+    void cancelEnrollment(Long enrollmentId);
 
     Page<EnrollmentVO> myEnrollments(long page, long size, Integer status);
 

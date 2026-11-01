@@ -22,15 +22,15 @@ if ($Resource -eq 'training-enrollment-check' -and $Access -eq 'gateway') { thro
 if ($Resource -eq 'gateway-enrollment' -and $Access -ne 'gateway') { throw 'gateway-enrollment requires gateway access.' }
 if ($Resource -in @('enrollment-create','gateway-enrollment')) {
     if (-not $ConfirmDraft) { throw 'ConfirmDraft is required for enrollment tests.' }
-    $training = Invoke-RestMethod "$($TrainingCheckUrl.TrimEnd('/'))/internal/trainings/$TrainingId/enrollment-check"
+    $training = Invoke-RestMethod "$($TrainingCheckUrl.TrimEnd('/'))/internal/training/get-enrollment-check/$TrainingId"
     if ($training.code -ne 200 -or $training.data.status -ne 0 -or $training.data.trainingId -ne $TrainingId) {
         throw 'Preflight failed: the dedicated training must exist and remain in draft status.'
     }
 }
 $path = switch ($Resource) {
-    'training-detail' { "/trainings/$TrainingId" }
-    'training-enrollment-check' { "/internal/trainings/$TrainingId/enrollment-check" }
-    default { '/enrollments' }
+    'training-detail' { "/training/get/$TrainingId" }
+    'training-enrollment-check' { "/internal/training/get-enrollment-check/$TrainingId" }
+    default { '/enrollment/create' }
 }
 $post = $Resource -in @('enrollment-create','gateway-enrollment')
 $method = if ($post) { 'POST' } else { 'GET' }

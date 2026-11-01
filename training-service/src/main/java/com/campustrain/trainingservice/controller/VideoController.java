@@ -14,13 +14,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/videos")
+@RequestMapping("/video")
 @RequiredArgsConstructor
 @Tag(name = "视频管理")
 public class VideoController {
     private final LessonService lessonService;
 
-    @PostMapping("/upload-url")
+@PostMapping("/create/upload-url")
     @Operation(summary = "获取视频上传地址")
     public Result<VideoUploadVO> uploadUrl(@Valid @RequestBody VideoUploadDTO dto) {
         return Result.success(lessonService.createUploadUrl(dto));

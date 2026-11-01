@@ -30,12 +30,12 @@ public class CommunityController {
     private final CommunityService communityService;
     private final LikeService likeService;
 
-    @PostMapping("/questions")
+@PostMapping("/create/question")
     public ApiResult<Long> createQuestion(@Valid @RequestBody QuestionRequest request) {
         return ApiResult.success(communityService.createQuestion(request));
     }
 
-    @GetMapping("/questions")
+@GetMapping("/list/questions")
     public ApiResult<PageView<QuestionView>> getQuestionPage(@RequestParam(name = "trainingId", required = false) Long trainingId,
             @RequestParam(name = "lessonId", required = false) Long lessonId,
             @RequestParam(name = "page", defaultValue = "1") int page,
@@ -43,29 +43,29 @@ public class CommunityController {
         return ApiResult.success(communityService.getQuestionPage(trainingId, lessonId, page, size));
     }
     //问题详情
-    @GetMapping("/questions/{id}")
-    public ApiResult<QuestionView> getQuestionDetail(@PathVariable("id") long id) {
-        return ApiResult.success(communityService.getQuestionDetail(id));
+@GetMapping("/get/question/{questionId}")
+    public ApiResult<QuestionView> getQuestionDetail(@PathVariable("questionId") long questionId) {
+        return ApiResult.success(communityService.getQuestionDetail(questionId));
     }
 
-    @PostMapping("/questions/{questionId}/answers")
+@PostMapping("/create/answer/{questionId}")
     public ApiResult<Long> createAnswer(@PathVariable("questionId") long questionId, @Valid @RequestBody AnswerRequest request) {
         return ApiResult.success(communityService.createAnswer(questionId, request));
     }
 
-    @GetMapping("/questions/{questionId}/answers")
+@GetMapping("/list/answers/{questionId}")
     public ApiResult<PageView<AnswerView>> getAnswerPage(@PathVariable("questionId") long questionId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "size", defaultValue = "20") int size) {
         return ApiResult.success(communityService.getAnswerPage(questionId, page, size));
     }
 
-    @PostMapping("/comments")
+@PostMapping("/create/comment")
     public ApiResult<Long> createComment(@Valid @RequestBody CommentRequest request) {
         return ApiResult.success(communityService.createComment(request));
     }
 
-    @GetMapping("/comments")
+@GetMapping("/list/comments")
     public ApiResult<PageView<CommentView>> getCommentPage(@RequestParam("targetType") String targetType,
             @RequestParam("targetId") long targetId,
             @RequestParam(name = "page", defaultValue = "1") int page,
@@ -73,17 +73,17 @@ public class CommunityController {
         return ApiResult.success(communityService.getCommentPage(targetType, targetId, page, size));
     }
 
-    @PostMapping("/likes")
+@PostMapping("/like")
     public ApiResult<LikeView> likeTarget(@Valid @RequestBody LikeRequest request) {
         return ApiResult.success(likeService.likeTarget(request.targetType(), request.targetId()));
     }
 
-    @DeleteMapping("/likes")
+@PostMapping("/unlike")
     public ApiResult<LikeView> unlikeTarget(@Valid @RequestBody LikeRequest request) {
         return ApiResult.success(likeService.unlikeTarget(request.targetType(), request.targetId()));
     }
 
-    @GetMapping("/likes")
+@GetMapping("/get/like-status")
     public ApiResult<LikeView> getLikeState(@RequestParam("targetType") String targetType,
             @RequestParam("targetId") long targetId) {
         return ApiResult.success(likeService.getLikeState(targetType, targetId));

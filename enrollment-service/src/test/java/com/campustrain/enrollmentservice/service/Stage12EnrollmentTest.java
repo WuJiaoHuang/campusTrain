@@ -59,10 +59,10 @@ class Stage12EnrollmentTest {
         training = new RemoteTrainingEnrollmentCheckVO(); training.setTrainingId(2L); training.setTeacherId(3L);
         training.setStatus(1); training.setCapacity(10); training.setEnrolledCount(0);
         when(users.getUserById(anyLong())).thenAnswer(inv -> ok(user));
-        when(trainings.getTrainingById(anyLong())).thenAnswer(inv -> ok(training));
-        when(trainings.increment(anyLong())).thenReturn(ok(null));
-        when(trainings.decrement(anyLong())).thenReturn(ok(null));
-        when(trainings.restore(anyLong())).thenReturn(ok(null));
+        when(trainings.getTrainingEnrollmentCheck(anyLong())).thenAnswer(inv -> ok(training));
+        when(trainings.incrementEnrollmentCount(anyLong())).thenReturn(ok(null));
+        when(trainings.decrementEnrollmentCount(anyLong())).thenReturn(ok(null));
+        when(trainings.restoreEnrollmentCount(anyLong())).thenReturn(ok(null));
         when(reservations.reserve(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
         when(reservations.release(anyLong(), anyLong())).thenReturn(ReservationResult.SUCCESS);
         when(outbox.createEnrollmentSuccess(any(), any(), any(), any())).thenReturn(100L);
@@ -73,17 +73,17 @@ class Stage12EnrollmentTest {
     @AfterEach void clear() { UserContext.clear(); }
 
     @Test void firstEnrollmentReservesThenSaves() {
-        service.enroll(request);
-        verify(trainings).increment(2L); verify(service).save(any(Enrollment.class));
+        service.createEnrollment(request);
+        verify(trainings).incrementEnrollmentCount(2L); verify(service).save(any(Enrollment.class));
         verify(outbox).createEnrollmentSuccess(any(), eq(1L), eq(2L), eq("trace"));
         verify(outbox, never()).dispatch(any());
         verify(reservations).ensureInitialized(training); verify(reservations).reserve(2L, 1L);
-        verify(tx).commit(any()); verify(trainings, never()).decrement(anyLong());
+        verify(tx).commit(any()); verify(trainings, never()).decrementEnrollmentCount(anyLong());
     }
 
     @Test void duplicateStopsBeforeRemoteCalls() {
         doReturn(true).when(service).exists(any());
-        assertThrows(BusinessException.class, () -> service.enroll(request));
+        assertThrows(BusinessException.class, () -> service.createEnrollment(request));
         verifyNoInteractions(users, trainings);
         verifyNoInteractions(reservations);
     }
@@ -91,69 +91,69 @@ class Stage12EnrollmentTest {
     @Test void cancelledRecordIsReactivatedWithoutInsert() {
         Enrollment old = record(0); old.setId(42L);
         doReturn(old).when(service).getOne(any(Wrapper.class));
-        assertEquals(42L, service.enroll(request));
+        assertEquals(42L, service.createEnrollment(request));
         verify(service).update(any(Wrapper.class)); verify(service, never()).save(any(Enrollment.class));
     }
 
     @Test void rejectedUserAndTrainingConditionsNeverReserve() {
-        user.setRole("TEACHER"); assertThrows(BusinessException.class, () -> service.enroll(request));
-        user.setRole("STUDENT"); user.setStatus(0); assertThrows(BusinessException.class, () -> service.enroll(request));
-        user.setStatus(1); training.setStatus(0); assertThrows(BusinessException.class, () -> service.enroll(request));
+        user.setRole("TEACHER"); assertThrows(BusinessException.class, () -> service.createEnrollment(request));
+        user.setRole("STUDENT"); user.setStatus(0); assertThrows(BusinessException.class, () -> service.createEnrollment(request));
+        user.setStatus(1); training.setStatus(0); assertThrows(BusinessException.class, () -> service.createEnrollment(request));
         training.setStatus(1); training.setEnrollStartTime(LocalDateTime.now().plusDays(1));
-        assertThrows(BusinessException.class, () -> service.enroll(request));
+        assertThrows(BusinessException.class, () -> service.createEnrollment(request));
         training.setEnrollStartTime(null); training.setEnrollEndTime(LocalDateTime.now().minusDays(1));
-        assertThrows(BusinessException.class, () -> service.enroll(request));
+        assertThrows(BusinessException.class, () -> service.createEnrollment(request));
         training.setEnrollEndTime(null); training.setEnrolledCount(10);
-        assertThrows(BusinessException.class, () -> service.enroll(request));
-        when(trainings.getTrainingById(2L)).thenReturn(ok(null));
-        assertThrows(BusinessException.class, () -> service.enroll(request));
-        verify(trainings, never()).increment(anyLong());
+        assertThrows(BusinessException.class, () -> service.createEnrollment(request));
+        when(trainings.getTrainingEnrollmentCheck(2L)).thenReturn(ok(null));
+        assertThrows(BusinessException.class, () -> service.createEnrollment(request));
+        verify(trainings, never()).incrementEnrollmentCount(anyLong());
         verifyNoInteractions(reservations);
     }
 
     @Test void dependencyFailureReturns503WithoutWriting() {
         when(users.getUserById(1L)).thenReturn(RemoteResult.unavailable("unavailable"));
-        assertEquals(503, assertThrows(BusinessException.class, () -> service.enroll(request)).getCode());
+        assertEquals(503, assertThrows(BusinessException.class, () -> service.createEnrollment(request)).getCode());
         when(users.getUserById(1L)).thenReturn(ok(user));
-        when(trainings.getTrainingById(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
-        assertEquals(503, assertThrows(BusinessException.class, () -> service.enroll(request)).getCode());
-        verify(service, never()).save(any(Enrollment.class)); verify(trainings, never()).increment(anyLong());
+        when(trainings.getTrainingEnrollmentCheck(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
+        assertEquals(503, assertThrows(BusinessException.class, () -> service.createEnrollment(request)).getCode());
+        verify(service, never()).save(any(Enrollment.class)); verify(trainings, never()).incrementEnrollmentCount(anyLong());
     }
 
     @Test void failedLocalCommitReleasesReservedPlace() {
         doThrow(new TransactionSystemException("commit failed")).when(tx).commit(any());
-        assertThrows(TransactionSystemException.class, () -> service.enroll(request));
-        verify(trainings).increment(2L); verify(trainings).decrement(2L);
+        assertThrows(TransactionSystemException.class, () -> service.createEnrollment(request));
+        verify(trainings).incrementEnrollmentCount(2L); verify(trainings).decrementEnrollmentCount(2L);
     }
 
     @Test void countFallbackFailsWithoutLocalWrite() {
-        when(trainings.increment(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
-        assertEquals(503, assertThrows(BusinessException.class, () -> service.enroll(request)).getCode());
+        when(trainings.incrementEnrollmentCount(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
+        assertEquals(503, assertThrows(BusinessException.class, () -> service.createEnrollment(request)).getCode());
         verify(service, never()).save(any(Enrollment.class));
-        verify(trainings, never()).decrement(anyLong());
+        verify(trainings, never()).decrementEnrollmentCount(anyLong());
         verify(reservations).release(2L, 1L);
     }
 
     @Test void compensationFailureDoesNotHideOriginalFailure() {
         doThrow(new TransactionSystemException("commit failed")).when(tx).commit(any());
-        when(trainings.decrement(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
-        TransactionSystemException failure = assertThrows(TransactionSystemException.class, () -> service.enroll(request));
+        when(trainings.decrementEnrollmentCount(2L)).thenReturn(RemoteResult.unavailable("unavailable"));
+        TransactionSystemException failure = assertThrows(TransactionSystemException.class, () -> service.createEnrollment(request));
         assertEquals(1, failure.getSuppressed().length);
     }
 
     @Test void cancelAndDuplicateCancel() {
         Enrollment record = record(1); doReturn(record).when(service).getOne(any(Wrapper.class));
-        service.cancel(7L); verify(trainings).decrement(2L);
+        service.cancelEnrollment(7L); verify(trainings).decrementEnrollmentCount(2L);
         verify(reservations).release(2L, 1L);
-        record.setStatus(0); assertThrows(BusinessException.class, () -> service.cancel(7L));
-        verify(trainings, times(1)).decrement(2L);
+        record.setStatus(0); assertThrows(BusinessException.class, () -> service.cancelEnrollment(7L));
+        verify(trainings, times(1)).decrementEnrollmentCount(2L);
     }
 
     @Test void failedCancellationCommitRestoresPlace() {
         doReturn(record(1)).when(service).getOne(any(Wrapper.class));
         doThrow(new TransactionSystemException("commit failed")).when(tx).commit(any());
-        assertThrows(TransactionSystemException.class, () -> service.cancel(7L));
-        verify(trainings).decrement(2L); verify(trainings).restore(2L);
+        assertThrows(TransactionSystemException.class, () -> service.cancelEnrollment(7L));
+        verify(trainings).decrementEnrollmentCount(2L); verify(trainings).restoreEnrollmentCount(2L);
     }
 
     @Test void rosterChecksRoleAndOwnership() {

@@ -165,17 +165,17 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
         if ("/auth".equals(path) || path.startsWith("/auth/")) {
             return "auth-service";
         }
-        if ("/users".equals(path) || path.startsWith("/users/")) {
+        if ("/user".equals(path) || path.startsWith("/user/")) {
             return "user-service";
         }
-        if ("/trainings".equals(path) || path.startsWith("/trainings/")
-                || "/courses".equals(path) || path.startsWith("/courses/")
-                || "/chapters".equals(path) || path.startsWith("/chapters/")
-                || "/lessons".equals(path) || path.startsWith("/lessons/")
-                || "/videos".equals(path) || path.startsWith("/videos/")) {
+        if ("/training".equals(path) || path.startsWith("/training/")
+                || "/course".equals(path) || path.startsWith("/course/")
+                || "/chapter".equals(path) || path.startsWith("/chapter/")
+                || "/lesson".equals(path) || path.startsWith("/lesson/")
+                || "/video".equals(path) || path.startsWith("/video/")) {
             return "training-service";
         }
-        if ("/enrollments".equals(path) || path.startsWith("/enrollments/")) {
+        if ("/enrollment".equals(path) || path.startsWith("/enrollment/")) {
             return "enrollment-service";
         }
         if ("/community".equals(path) || path.startsWith("/community/")) {

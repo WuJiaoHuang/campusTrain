@@ -10,10 +10,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 @FeignClient(name = "training-service", contextId = "communityTraining")
 public interface TrainingClient {
     //根据id找training对象
-    @GetMapping("/internal/trainings/{id}/enrollment-check")
-    RemoteResult<Object> getTrainingEnrollmentCheck(@PathVariable("id") Long id);
-    @GetMapping("/internal/learning/lessons/{id}")
-    RemoteResult<LessonInfo> getLessonInfo(@PathVariable("id") Long id);
-    @GetMapping("/trainings/{id}/catalog")
-    RemoteResult<Catalog> getCatalog(@PathVariable("id") Long id);
+    @GetMapping("/internal/training/get-enrollment-check/{trainingId}")
+    RemoteResult<Object> getTrainingEnrollmentCheck(@PathVariable("trainingId") Long trainingId);
+    @GetMapping("/internal/learning/get-lesson/{lessonId}")
+    RemoteResult<LessonInfo> getLessonInfo(@PathVariable("lessonId") Long lessonId);
+    @GetMapping("/training/get/catalog/{trainingId}")
+    RemoteResult<Catalog> getTrainingCatalog(@PathVariable("trainingId") Long trainingId);
 }
