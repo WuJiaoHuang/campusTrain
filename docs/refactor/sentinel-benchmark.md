@@ -4,7 +4,7 @@
 
 2026-11-02 实测。压测客户端是 Windows 本机的 JMeter 5.6.3 CLI，外部业务入口是 VMware CentOS 虚拟机 `http://192.168.10.102/` 的 Nginx，再到 Gateway。未使用 Windows Docker Desktop。Nacos Discovery 实时查询显示 campus-gateway、auth-service、learning-service、community-service、training-service、enrollment-service、user-service 各 1 个健康实例；目标容器内端口分别为 8080、8084、8087、8090、8082、8083、8081。MySQL、Redis、Nacos、RabbitMQ 在同一虚拟机的 Docker Compose 基础设施中；Sentinel Dashboard `http://192.168.10.102:8858/` 实测 HTTP 200。当前是单 Gateway、单业务实例的 smoke 拓扑，不是 Stage10 旧版 Windows 本机多实例拓扑。
 
-Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS，learning 与 community 仍为 `[]`，详见下文。本次没有改旧阈值：training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例。
+Stage A 时 Nacos 新资源 flow 示例文件 `auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json` 均保持 `[]`。Stage B 结束后 `auth-service-sentinel-flow-dev.json` 已写入 auth-login=3 QPS；Stage C 结束后 `learning-service-sentinel-flow-dev.json` 已写入 learning-progress-report=8 QPS，community 仍为 `[]`，详见下文。本次没有改旧阈值：training-detail 800、training-enrollment-check 750、enrollment-create 160、Gateway enrollment route 150 QPS/实例。
 
 ## 独立测试数据
 
@@ -111,3 +111,91 @@ CPU 采样（每 5 秒，去掉首末各 1–2 个采样点）：
 - auth 容量完全由 BCrypt 与整机 CPU 决定，本轮无法给出 500ms 尾延迟承诺。
 - 5/6/10 QPS 已进入过载区，未继续跑 20–100 QPS：吞吐平台和回落在 6–10 QPS 已明确，继续加压只会制造客户端超时，不会产生新的容量信息。
 - 单实例结果不代表多实例总容量；阈值是每实例本地规则。
+
+## 容量结果（Stage C：learning-progress-report）
+
+### C.1 环境、数据与口径
+
+2026-11-02 01:16–02:00 实测。入口固定为 `POST http://192.168.10.102/learning/report-progress/{lessonId}`，链路 Nginx → Gateway → learning-service（单实例）。请求先经 Feign 调用 training-service 查询课时、调用 enrollment-service 校验有效报名，再进入 Redis Lua 单调更新与 dirty 集合，由每 5 秒、批量 100 的落库任务写入 `campus_learning.learning_record`。learning-service 的 `/internal/learning/**` 内部接口没有 Sentinel 资源，Feign 调用不参与本资源的流控。
+
+使用基准学生 1990100–1991099（共 1,000 人，均对 trainingId=199001 有有效报名）和专用视频课时 199002–199080。每个用户由 JMeter JSR223 生成按请求次数递增的 `PROGRESS_SECONDS`，请求路径是真实的“进度变大”更新，不是旧进度被忽略的快路径。为制造重复更新，每轮只从令牌池取前 100 个用户，60 秒内每个用户约更新 3–14 次；各轮分别使用全新课时（199011–199017、199021–199024），最终进度 3–8 秒，远低于 90 秒完成阈值，因此 completed 始终为 0，不触发完成事件。正式测试前已读回 Nacos `campustrain-dev / CAMPUS_TRAIN / learning-service-sentinel-flow-dev.json` 为 `[]`。
+
+warm-up 10 QPS / 10 线程只完成 1.97 QPS（线程不足），不计入结论。稳定性判据：实际吞吐 ≥ 目标 95%、Error%=0、无 5xx/超时/连接错误、P95 不明显失控、CPU 不持续饱和；同时观察 Redis/Lua 错误、dirty 集合、落库追赶与 Feign 错误。
+
+### C.2 未治理裸容量
+
+| 目标 QPS | 线程 | 用户池 | 课时 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 / 429 / 503 / timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 5 | 20 | 1,000 | 199007 | 299 | 4.906 | 98.1% | 1,924 | 3,084 | 5,243 | 6,471 | 7,190 | 0 | 299 / 0 / 0 / 0 |
+| 10 | 25 | 1,000 | 199008 | 458 | 7.626 | 76.3% | 3,071 | 4,201 | 4,573 | 6,466 | 8,901 | 0 | 458 / 0 / 0 / 0 |
+| 20 | 50 | 1,000 | 199009 | 540 | 8.474 | 42.4% | 5,503 | 8,337 | 8,847 | 9,681 | 10,277 | 0 | 540 / 0 / 0 / 0 |
+| 30 | 100 | 1,000 | 199010 | 542 | 8.390 | 28.0% | 11,286 | 16,527 | 18,298 | 21,929 | 22,760 | 0 | 542 / 0 / 0 / 0 |
+| 5 | 20 | 100 | 199011 | 310 | 5.192 | 103.8% | 829 | 2,074 | 2,486 | 3,042 | 3,919 | 0 | 310 / 0 / 0 / 0 |
+| 10 | 30 | 100 | 199012 | 605 | 10.017 | 100.2% | 874 | 1,749 | 1,985 | 2,448 | 3,279 | 0 | 605 / 0 / 0 / 0 |
+| 15 | 80 | 100 | 199015 | 415 | 5.527 | 36.8% | 12,325 | 23,343 | 25,654 | 29,026 | 30,015 | 0.482 | 413 / 0 / 0 / 2 |
+| 15 | 80 | 100 | 199016 | 856 | 13.910 | 92.7% | 3,641 | 6,689 | 7,509 | 8,865 | 10,271 | 0 | 856 / 0 / 0 / 0 |
+| 20 | 60 | 100 | 199013 | 700 | 11.252 | 56.3% | 4,990 | 7,930 | 8,997 | 10,601 | 14,146 | 0 | 700 / 0 / 0 / 0 |
+| 20 | 100 | 100 | 199014 | 749 | 11.550 | 57.8% | 7,905 | 12,600 | 13,945 | 16,180 | 17,767 | 0 | 749 / 0 / 0 / 0 |
+
+1,000 用户轮次每轮只取 1,000 个令牌、每用户大多只上报一次；Redis 进度键首次访问需要从 MySQL 初始化，且这些轮次的线程数偏低，因此吞吐明显低于同目标值的 100 用户热键轮次。100 用户轮次才是重复更新主路径的数据。15 QPS 第一轮（lesson 199015）在 01:43–01:44 遇到 Nacos gRPC 健康检查失败，吞吐跌到 5.527 QPS 并出现 2 个 SocketTimeoutException；服务在 01:44:36 自动恢复，同参数重跑（199016）得到 13.910 QPS、0 错误。第一轮作为异常保留，不用于容量结论。
+
+**结论**：最后完全稳定点是 10 QPS（实际 10.017，为目标 100.2%，Error=0，P95 1,985ms）；拐点在 10 与 15–20 QPS 之间，15 QPS 重跑为目标的 92.7%，20 QPS 两次只有 56.3%–57.8%；已观测吞吐峰值为 13.91 QPS。机器 CPU 在 10 QPS 起均值约 88%、峰值 100%，20–30 QPS 时均值 92%–100%，瓶颈是 2 vCPU 共享 VM 的整机 CPU 与内存/swap 压力，不是 Lua 或落库错误。
+
+CPU 采样（每 5 秒，去掉首末各 1–2 个采样点）：
+
+| 目标 QPS | 用户池 | 机器 CPU 均值（峰值） | 观察 |
+| ---: | ---: | ---: | --- |
+| 5 | 1,000 | 96.1%（100%） | 空载基线高，已接近饱和 |
+| 10 | 1,000 | 96.1%（100%） | 吞吐只完成 76.3% |
+| 20 | 1,000 | 99.6%（100%） | 持续饱和 |
+| 30 | 1,000 | 98.0%（100%） | 过载，吞吐低于峰值 |
+| 5 | 100 | 86.1%（100%） | 热键路径，吞吐达标 |
+| 10 | 100 | 88.1%（100%） | 本轮最佳稳定点 |
+| 15 | 100 | 88.5%（100%） | 重跑值；首轮因 Nacos 异常为 100% |
+| 20 | 100 | 92.2%–93.6%（100%） | 两次均未达标 |
+
+压测期间内存已用约 3.6 GiB，swap 约 2.2–2.4 GiB；14 个容器同时运行，空载机器 CPU 已占约一半。该基线解释了 10 QPS 时 P95 已接近 2 秒、15–20 QPS 时尾延迟达到 7–14 秒。
+
+### C.3 Redis、落库与一致性观测
+
+- 未治理各轮均无 Lua 错误、Redis 连接错误或 Feign 调用错误；learning 日志中没有 Redis/Lua/Feign 异常，错误仅来自上述 Nacos 连接事件。
+- dirty 集合在轮次中增长，结束后可回落到 0；观测到 237 → 0 约 40 秒完成。40 分钟窗口内落库任务共执行 83 批、写入 4,533 条，单批上限 100，符合每 5 秒批量 100 的配置；查询时 MySQL 已追平 Redis。
+- 未治理轮次结束后核对 lessons 199011–199014：400 个用户/课时组合在 Redis 与 MySQL 的 `progress_seconds`、`completed` 完全一致（400/400，0 不一致），completed 全为 0。
+- 完成事件表 `campus_learning.event_outbox` 总计 6 行，均为历史数据（用户 1001/1004，课时 16001/16002/16003/5001，2026-10-26 至 11-01），没有本次基准用户或 benchmark 课时产生的新事件。
+
+### C.4 最终阈值
+
+**learning-progress-report = 8 QPS/实例**。理由：最后完全稳定点 10 QPS，阈值取 80%（10 → 8），低于 10–15 之间的拐点，也明显低于已观测峰值 13.91 QPS；10 QPS 时整机 CPU 已达 88%，P95 约 2 秒，15–20 QPS 尾延迟和吞吐同时恶化，因此不取 10（无余量）也不取 12（已过拐点）。8 QPS 为共享 VM 上的 GC、Nacos 心跳和落库任务保留余量。阈值是每 learning JVM 的本地 FlowRule，不是集群总配额。
+
+已写入 Nacos `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `learning-service-sentinel-flow-dev.json`，并读回校验；本地 `config/nacos/learning-service-sentinel-flow-dev.json` 同步为相同内容：
+
+```json
+[
+  {"resource":"learning-progress-report","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0}
+]
+```
+
+### C.5 开启 Sentinel 后复测
+
+| 负载 | 线程 | 样本 | 实际总 QPS | 200 | 429 | 429 占比 | 成功 QPS | 成功 P95 ms | 总 P95 ms | 503 | timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6（0.75T） | 12 | 366 | 6.16 | 345 | 21 | 5.7% | 5.806 | 916 | 896 | 0 | 0 |
+| 6（0.75T，突发对照） | 40 | 376 | 6.322 | 275 | 101 | 26.9% | 4.623 | 4,176 | 4,810 | 0 | 0 |
+| 8（1.0T） | 16 | 485 | 8.147 | 388 | 97 | 20.0% | 6.518 | 1,799 | 1,668 | 0 | 0 |
+| 12（1.5T） | 24 | 708 | 11.929 | 420 | 288 | 40.7% | 7.077 | 2,736 | 2,601 | 0 | 0 |
+| 16（2.0T） | 32 | 965 | 16.138 | 465 | 500 | 51.8% | 7.797 | 2,467 | 1,660 | 0 | 0 |
+
+阈值上方负载主要被 429 拒绝，成功吞吐稳定在约 7.1–7.8 QPS；全程 0 个 503、0 超时、0 连接拒绝/重置，服务健康。6 QPS / 40 线程那一轮是因客户端排队后集中释放造成的突发对照：大量请求在同一秒内到达，触发秒级窗口拒绝（26.9%），不是阈值失效；同目标 12 线程时 429 降到 5.7%，说明客户端并发与到达平滑度会显著影响低负载下的 429 比例。
+
+阈值附近仍有 20% 的 429：Sentinel QPS 规则按 1 秒窗口计数，JMeter 的 ConstantThroughputTimer 在响应变慢时会形成秒内突发，8 QPS 目标下单秒可超过 8 个请求；这是秒级计数的固有突发效应。阈值上方成功吞吐略低于 8，也是同一原因造成的窗口利用率损失。文档保留这些数字，不把 429 全部归因于过载。
+
+### C.6 数据一致性与健康检查
+
+复测结束等待 dirty 集合归零后核对 lessons 199017、199021–199024：500 个用户/课时组合在 Redis 与 MySQL 的进度和 completed 完全一致（500/500，0 不一致），completed 全为 0，没有提前完成或进度回退；`campus_learning.event_outbox` 仍为 6 行历史数据，没有新增完成事件。dirty 集合最终为 0。全部 14 个容器 `docker ps` 为 healthy，learning-service 容器未重启；Nacos HTTP 200，服务在 Nacos 异常后自动恢复。
+
+### C.7 异常、回退与限制
+
+- 01:43–01:44 的 Nacos gRPC 异常使 15 QPS 第一轮出现 2 个客户端超时和 5.527 QPS 的低值，日志为 `Server check fail, please check server nacos, port 9848` 与 `Client not connected, current status:UNHEALTHY`；01:44:36 恢复推送并重新收到服务列表。根因是 2 vCPU 整机在压测中持续 100% CPU、swap 约 2.4 GiB，Nacos 客户端健康检查超时；不是 learning 业务代码错误，也不属于 Sentinel 限流。该轮保留在表中，不用重跑值覆盖。
+- 2 vCPU / 3.7 GiB 共享 VM 的绝对容量不能外推到生产；换机器、换实例数必须重测。
+- 单实例结果不代表多实例总容量；阈值是每实例本地规则。
+- 若需回退，将 Nacos 与本地文件恢复为 `[]` 即关闭流控；本次未改其它资源、未改旧阈值、未改业务代码。原始 JTL、summary 与 CPU CSV 保存在被 Git 忽略的 `scripts/sentinel-benchmark/results/`，不提交。
