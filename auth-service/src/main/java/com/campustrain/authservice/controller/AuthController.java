@@ -4,6 +4,7 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.campustrain.authservice.common.Result;
+import com.campustrain.authservice.context.TraceIdContext;
 import com.campustrain.authservice.dto.LoginDTO;
 import com.campustrain.authservice.service.AuthService;
 import com.campustrain.authservice.vo.LoginVO;
@@ -13,7 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,7 +41,7 @@ public class AuthController {
     public ResponseEntity<Result<LoginVO>> handleLoginBlock(LoginDTO dto, BlockException e) {
         String username = dto == null ? null : dto.getUsername();
         log.warn("Sentinel blocked request, traceId={}, resource=auth-login, username={}, blockType={}",
-                MDC.get("traceId"), username, e.getClass().getSimpleName());
+                TraceIdContext.get(), username, e.getClass().getSimpleName());
         log.debug("Sentinel block detail, resource=auth-login, username={}", username, e);
         if (e instanceof FlowException) {
             return ResponseEntity.status(429).body(Result.fail(429, "登录请求过于频繁，请稍后重试"));

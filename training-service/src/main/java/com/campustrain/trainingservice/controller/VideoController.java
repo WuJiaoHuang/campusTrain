@@ -2,6 +2,7 @@ package com.campustrain.trainingservice.controller;
 
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.campustrain.trainingservice.common.Result;
 import com.campustrain.trainingservice.context.TraceIdContext;
 import com.campustrain.trainingservice.dto.VideoUploadDTO;
@@ -39,6 +40,9 @@ public class VideoController {
         log.warn("Sentinel blocked request, traceId={}, resource=oss-upload-url, fileName={}, blockType={}",
                 TraceIdContext.get(), fileName, e.getClass().getSimpleName());
         log.debug("Sentinel block detail, resource=oss-upload-url, fileName={}", fileName, e);
+        if (e instanceof FlowException) {
+            return ResponseEntity.status(429).body(Result.fail(429, "视频请求过于频繁，请稍后重试"));
+        }
         return ResponseEntity.status(503).body(Result.fail(503, "视频服务暂时不可用，请稍后重试"));
     }
 }
