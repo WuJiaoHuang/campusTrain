@@ -8,6 +8,24 @@ URL = "${__groovy(new java.net.URI(props.get('BASE_URL') ?: 'http://192.168.10.1
 AUTH = "Bearer ${__groovy(props.get('TOKEN') ?: System.getenv('BENCHMARK_TOKEN') ?: '',)}"
 USERNAME = "${__groovy(props.get('USERNAME') ?: System.getenv('BENCHMARK_USERNAME') ?: '',)}"
 PASSWORD = "${__groovy(props.get('PASSWORD') ?: System.getenv('BENCHMARK_PASSWORD') ?: '',)}"
+LEARNING_COUNTER_SCRIPT = """
+def counters = props.get('LEARN_COUNTERS')
+if (counters == null) {
+    counters = new java.util.concurrent.ConcurrentHashMap()
+    props.put('LEARN_COUNTERS', counters)
+}
+def key = vars.get('username')
+if (key == null) {
+    key = vars.get('token')
+}
+def counter = counters.get(key)
+if (counter == null) {
+    def created = new java.util.concurrent.atomic.AtomicInteger(0)
+    def existing = counters.putIfAbsent(key, created)
+    counter = existing == null ? created : existing
+}
+vars.put('PROGRESS_SECONDS', String.valueOf(counter.incrementAndGet()))
+"""
 
 
 def prop(parent, name, value, kind="stringProp"):
@@ -41,7 +59,7 @@ def assertion(parent, label, field, expected, test_type):
     xml.SubElement(parent, "hashTree")
 
 
-def add_group(tree, label, method, path, body, token, marker):
+def add_group(tree, label, method, path, body, token, marker, token_file=False, learning_counter=False):
     group = xml.SubElement(tree, "ThreadGroup", {
         "guiclass": "ThreadGroupGui", "testclass": "ThreadGroup", "testname": label
     })
@@ -63,9 +81,10 @@ def add_group(tree, label, method, path, body, token, marker):
         "guiclass": "HeaderPanel", "testclass": "HeaderManager", "testname": "Request headers"
     })
     header_collection = xml.SubElement(headers, "collectionProp", {"name": "HeaderManager.headers"})
+    token_header = "Bearer ${token}" if token_file else AUTH
     for header_name, header_value in [
         ("Content-Type", "application/json"),
-        *([("Authorization", AUTH)] if token else []),
+        *([("Authorization", token_header)] if token else []),
     ]:
         header = xml.SubElement(header_collection, "elementProp", {
             "name": header_name, "elementType": "Header"
@@ -73,6 +92,26 @@ def add_group(tree, label, method, path, body, token, marker):
         prop(header, "Header.name", header_name)
         prop(header, "Header.value", header_value)
     xml.SubElement(children, "hashTree")
+
+    if token_file:
+        csv_data = xml.SubElement(children, "CSVDataSet", {
+            "guiclass": "TestBeanGUI", "testclass": "CSVDataSet", "testname": "Benchmark token pool"
+        })
+        prop(csv_data, "filename", "${__P(TOKEN_FILE,)}")
+        prop(csv_data, "variableNames", "username,token")
+        prop(csv_data, "ignoreFirstLine", "true", "boolProp")
+        prop(csv_data, "recycle", "true", "boolProp")
+        prop(csv_data, "delimiter", ",")
+        xml.SubElement(children, "hashTree")
+
+    if learning_counter:
+        preprocessor = xml.SubElement(children, "JSR223PreProcessor", {
+            "guiclass": "TestBeanGUI", "testclass": "JSR223PreProcessor",
+            "testname": "Monotonic progress per benchmark user"
+        })
+        prop(preprocessor, "scriptLanguage", "groovy")
+        prop(preprocessor, "script", LEARNING_COUNTER_SCRIPT)
+        xml.SubElement(children, "hashTree")
 
     timer = xml.SubElement(children, "ConstantThroughputTimer", {
         "guiclass": "TestBeanGUI", "testclass": "ConstantThroughputTimer",
@@ -108,7 +147,7 @@ def write_plan(filename, groups):
     tree = xml.SubElement(root, "hashTree")
     plan = xml.SubElement(tree, "TestPlan", {
         "guiclass": "TestPlanGui", "testclass": "TestPlan",
-        "testname": "CampusTrain Sentinel Stage A " + filename
+        "testname": "CampusTrain Sentinel benchmark " + filename
     })
     prop(plan, "TestPlan.functional_mode", "false", "boolProp")
     prop(plan, "TestPlan.serialize_threadgroups", "false", "boolProp")
@@ -119,7 +158,8 @@ def write_plan(filename, groups):
     xml.SubElement(arguments, "collectionProp", {"name": "Arguments.arguments"})
     groups_tree = xml.SubElement(tree, "hashTree")
     for group in groups:
-        add_group(groups_tree, *group)
+        options = group[6] if len(group) > 6 else {}
+        add_group(groups_tree, *group[:6], **options)
     xml.indent(root, space="  ")
     xml.ElementTree(root).write(HERE / filename, encoding="utf-8", xml_declaration=True)
 
@@ -152,4 +192,28 @@ write_plan(
         ("oss-play-url", "GET", "/lesson/get/play-url/${__P(LESSON_ID,199001)}",
          "", True, SUCCESS),
     ],
+)
+write_plan(
+    "learning-progress-multi.jmx",
+    [("learning-progress-report", "POST", "/learning/report-progress/${__P(LESSON_ID,199001)}",
+      '{"progressSeconds":${PROGRESS_SECONDS}}', True, SUCCESS,
+      {"token_file": True, "learning_counter": True})],
+)
+for action in ("like", "unlike"):
+    write_plan(
+        f"community-{action}-multi.jmx",
+        [(f"community-{action}", "POST", f"/community/{action}",
+          '{"targetType":"${__P(TARGET_TYPE,QUESTION)}","targetId":${__P(TARGET_ID,199000001)}}',
+          True, SUCCESS, {"token_file": True})],
+    )
+write_plan(
+    "oss-upload-url.jmx",
+    [("oss-upload-url", "POST", "/video/create/upload-url",
+      '{"fileName":"benchmark-capacity.mp4","contentType":"video/mp4","size":4321}',
+      True, SUCCESS)],
+)
+write_plan(
+    "oss-play-url.jmx",
+    [("oss-play-url", "GET", "/lesson/get/play-url/${__P(LESSON_ID,199001)}",
+      "", True, SUCCESS)],
 )

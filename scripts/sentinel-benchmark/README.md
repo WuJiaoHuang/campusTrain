@@ -1,6 +1,6 @@
-# Sentinel 新资源压测脚本（Stage A）
+# Sentinel 新增资源压测脚本
 
-本目录沿用 Stage10 的 JMeter CLI、ConstantThroughputTimer、CSV JTL 和全量样本 nearest-rank P90/P95/P99。Stage A 仅运行小流量 smoke；不据此确定容量或 Sentinel 阈值。
+本目录沿用 Stage10 的 JMeter CLI、ConstantThroughputTimer、CSV JTL 和全量样本 nearest-rank P90/P95/P99。Stage A 的小流量 smoke 不作为容量或阈值依据；Stage B 起使用 `run/bench_round.py` 执行正式容量轮次。
 
 ## 准备
 
@@ -32,6 +32,21 @@ $env:BENCHMARK_PASSWORD = '<仅在本机输入测试密码>'
 ```
 
 环境变量可提供登录凭证或 JWT。`BASE_URL` 默认 `http://192.168.10.102`；五个 JMX 均支持 `TRAINING_ID`、`LESSON_ID`、`QUESTION_ID`、`ANSWER_ID`、`TARGET_QPS`、`THREADS`、`DURATION`、`RAMP_UP`，并在适用的采样器使用对应值。JMX 由 `jmeter/generate_plans.py` 生成，修改模板后重新运行该脚本。
+
+## 容量测试（Stage B 起）
+
+- `data/prepare_stage_bcd.py`：幂等创建 1,000 个 learning 基准用户和 11,000 个 community 基准用户，并为 learning 用户建立专用 training 199001 的有效报名；只写专用 ID，不清理业务表。
+- `data/prepare_tokens.py`：通过真实 `/auth/login` 为基准用户换取 JWT，写入被 Git 忽略的 `results/tokens/`；密码只从 `BENCHMARK_PASSWORD` 读取。
+- `run/bench_round.py`：执行一轮 JMeter，支持 `--token-file` 与 `--token-offset/--token-count` 切片令牌池，输出 `samples.jtl`、`summary.json`、`topology.json`。
+- `run/collect_stats.py`：通过 SSH 采集机器 CPU/load/内存；加 `--containers` 才采集 `docker stats`，避免在 2 vCPU VM 上干扰容量轮次。SSH 密码只从 `VM_PASSWORD` 读取，不落盘。
+- `jmeter/learning-progress-multi.jmx`、`community-like-multi.jmx`、`community-unlike-multi.jmx` 使用 CSV 令牌池；learning 计划为每个用户生成单调递增的进度秒数。`oss-upload-url.jmx` 与 `oss-play-url.jmx` 分开测试两个 OSS 资源。
+
+单轮示例（PowerShell 环境变量设置凭证）：
+
+```powershell
+python scripts/sentinel-benchmark/run/bench_round.py --plan auth-login.jmx --label auth-naked-5qps --qps 5 --threads 20 --duration 60 --ramp 5
+python scripts/sentinel-benchmark/run/bench_round.py --plan learning-progress-multi.jmx --label learning-100qps --qps 100 --threads 50 --lesson-id 199002 --token-file scripts/sentinel-benchmark/results/tokens/learning-tokens.csv --token-offset 0 --token-count 1000
+```
 
 每轮生成 `results/<资源>-<时间>/samples.jtl`、`summary.json`、`topology.json`。结果目录被 Git 忽略；`topology.json` 仅记录运行参数，不保存凭证。重新汇总：
 

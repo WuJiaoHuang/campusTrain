@@ -18,6 +18,8 @@ def summarize(path):
     if not samples:
         raise ValueError(f"No JTL samples: {path}")
     result = summarize_samples(samples)
+    success = [sample for sample in samples if sample.get("success", "").lower() == "true"]
+    result["successOnly"] = summarize_samples(success) if success else None
     labels = sorted({sample.get("label", "") for sample in samples})
     result["byLabel"] = {
         label: summarize_samples([sample for sample in samples if sample.get("label", "") == label])
@@ -37,6 +39,9 @@ def summarize_samples(samples):
         (sample.get("responseCode", "") + " " + sample.get("responseMessage", "")).lower()
         for sample in samples
     ]
+    connection_refused = sum("connection refused" in error for error in errors)
+    connection_reset = sum("connection reset" in error for error in errors)
+    timeout = sum("timeout" in error or "timed out" in error for error in errors)
     return {
         "samples": len(samples),
         "durationSeconds": round(window_seconds, 3),
@@ -49,16 +54,19 @@ def summarize_samples(samples):
         "errorPercent": round(100 * failed / len(samples), 3),
         "http200": codes["200"],
         "http400": codes["400"],
+        "http401": codes["401"],
         "http404": codes["404"],
         "http405": codes["405"],
         "http429": codes["429"],
         "http500": codes["500"],
         "http503": codes["503"],
-        "timeout": sum("timeout" in error or "timed out" in error for error in errors),
-        "connectionError": sum(
-            any(marker in error for marker in ("connectexception", "connection refused", "unknownhost", "noroutetohost"))
+        "timeout": timeout,
+        "connectionRefused": connection_refused,
+        "connectionReset": connection_reset,
+        "otherConnectionError": sum(
+            any(marker in error for marker in ("connectexception", "unknownhost", "noroutetohost"))
             for error in errors
-        ),
+        ) - connection_refused,
         "responseCodes": dict(codes),
     }
 
