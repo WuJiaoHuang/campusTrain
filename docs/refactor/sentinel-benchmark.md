@@ -555,3 +555,66 @@ CPU 采样（每 10 秒，去掉首末各 1 个采样点；auth 容器百分比�
 - 本轮没有重建、重启或删除任何容器，没有修改 auth 业务代码、数据库结构或其它 Sentinel 资源。
 - 回退方式：将 Nacos 与本地 `config/nacos/auth-service-sentinel-flow-dev.json` 同时发布为 `[]` 即关闭 auth-login 流控；恢复时重新发布上面的 8 QPS 规则。阈值是每个 auth JVM 的本地规则，不是集群总配额。
 - 限制：结论来自 4 vCPU / 7,803 MiB、单 auth 实例、共享 14 容器 VM；机器规格、BCrypt 成本因子、实例数变化后必须重测。Topology A 的 3 QPS 结论只适用于 2 vCPU / 3.7 GiB 资源受限环境，不再作为当前阈值依据。
+
+### C.1（Topology B）环境、数据与口径
+
+2026-11-02 12:02–12:22 实测裸容量。入口固定为 `POST http://192.168.10.102/learning/report-progress/{lessonId}`，链路 Nginx → Gateway → learning-service，单 learning 实例。使用 1,000 个专用基准用户 1990100–1991099 的预签发 JWT；每请求真实执行 Feign 调 training-service 取课时、Feign 调 enrollment-service 校验有效报名、Redis Lua 原子更新进度并写 dirty set，再由 `@Scheduled(fixedDelay=5000)` 每批 100 个成员刷入 MySQL `learning_record`，不是 mock，也没有绕过真实链路。JWT 有效期 2 小时，压测期间不重新签发。
+
+裸容量前将 Nacos `campustrain-dev / CAMPUS_TRAIN / learning-service-sentinel-flow-dev.json` 临时发布为 `[]` 并读回确认。JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒；warm-up 为 10 QPS / 15 秒，不计入结论。实际 QPS 按 JTL 首请求开始至末请求完成的时间窗计算，P90/P95/P99 为全量样本 nearest-rank。每轮使用一个新的视频课时（199025–199029、199031–199033，时长 100 秒、完成阈值 90 秒），JMeter 按用户维护单调递增的 `progressSeconds`，避免进度回退影响结论。稳定性判据：实际吞吐 ≥ 目标 95%、无 5xx、无 timeout/connection refused/reset、业务数据正确、P95 不明显跳升、整机 CPU 不持续打满。
+
+### C.2（Topology B）未治理裸容量（learning-progress-report）
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 / 429 / 503 / timeout | dirty 清零 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| 10 | 30 | 618 | 10.448 | 104.5% | 90.9 | 159 | 257 | 582 | 1,381 | 0 | 618 / 0 / 0 / 0 | 4.0s |
+| 20 | 50 | 1,232 | 20.807 | 104.0% | 48.6 | 81 | 107 | 200 | 402 | 0 | 1,232 / 0 / 0 / 0 | 14.0s |
+| 30 | 80 | 1,849 | 31.264 | 104.2% | 44.6 | 78 | 113 | 191 | 369 | 0 | 1,849 / 0 / 0 / 0 | 36.0s |
+| 50 | 120 | 3,058 | 51.912 | 103.8% | 52.2 | 88 | 141 | 452 | 666 | 0 | 3,058 / 0 / 0 / 0 | 46.1s |
+| 80 | 180 | 4,876 | 82.727 | 103.4% | 36.9 | 63 | 110 | 301 | 565 | 0 | 4,876 / 0 / 0 / 0 | 52.1s |
+| 100 | 220 | 6,085 | 103.474 | 103.5% | 29.9 | 48 | 64 | 185 | 327 | 0 | 6,085 / 0 / 0 / 0 | 54.1s |
+| 150 | 320 | 9,066 | 150.718 | 100.5% | 152.7 | 105 | 1,479 | 2,284 | 2,970 | 0 | 9,066 / 0 / 0 / 0 | 60.1s |
+| 200 | 420 | 11,424 | 193.804 | 96.9% | 418.5 | 1,522 | 2,629 | 3,828 | 4,871 | 0 | 11,424 / 0 / 0 / 0 | 56.1s |
+
+warm-up 10 QPS / 15 秒：30 样本、实际 1.947 QPS、Avg 15,170ms、P95 15,396ms、全部 HTTP 200。该轮是 JIT、连接池和 Feign 客户端冷启动导致的异常轮次，保留记录但不用于容量结论；紧随其后的正式 10 QPS 轮 Avg 90.9ms、P95 257ms。
+
+**结论**：最后稳定点是 100 QPS（实际 103.474，为目标 103.5%，P95 64ms，P99 185ms，Error=0）。第一个明显拐点在 100 与 150 QPS 之间：150 QPS 虽然实际 150.718（100.5%）且 0 错误，但 P50 仍为 27ms、P90 105ms、P95 跳到 1,479ms、P99 2,284ms，平均延迟从 29.9ms 升到 152.7ms，属于典型双峰排队；200 QPS 实际 193.804（96.9%），P90 1,522ms、P95 2,629ms、P99 3,828ms，进入饱和平台。已观测吞吐峰值为 193.804 QPS（200 QPS 目标）。10–100 QPS 区间吞吐随目标线性增长、P95 64–257ms、无任何 4xx/5xx/timeout/connection 错误；超过 100 QPS 后瓶颈表现为排队延迟而不是请求失败。按“P95 不明显跳升”的稳定判据，150 与 200 都不算稳定点。
+
+### C.3（Topology B）Redis、落库与数据一致性
+
+- 裸容量全部课时（199025–199029、199031–199033）刷盘后校验：Redis 进度 key 7,618 个，MySQL `learning_record` 7,618 行，缺失 0、进度/完成状态不一致 0；Redis completed=0，最大进度 13 秒，远低于 100 秒课时的 90 秒完成阈值；dirty set 为 0。
+- 容量轮次期间 dirty set 峰值为 939（150 QPS 轮），每轮在 4.0–60.1 秒内清零；`flush-batch-size=100`、`flush-interval-ms=5000`，刷盘任务跟得上写入，MySQL 行数与 Redis key 数最终完全一致。
+- 进度单调性：JMeter 按用户递增 `progressSeconds`，所有轮次未出现 400“进度超过视频时长”，MySQL 最大进度 13 秒；Lua 的防回退逻辑没有被绕过。
+- 完成状态专项探针：用户 1990100、课时 199038，顺序上报 1–95 秒。89 秒时 `completed=false`，90 秒时变为 `completed=true`；dirty 清零后 Redis `progressSeconds=95, completed=1` 与 MySQL `progress_seconds=95, completed=1, status=2` 一致；`event_outbox` 从 6 行增至 7 行，新增 `LEARNING_COMPLETED` 事件。容量轮次没有产生任何 `LEARNING_COMPLETED` 事件，不存在误完成。
+
+### C.4（Topology B）最终阈值（learning-progress-report）
+
+**learning-progress-report = 80 QPS/实例**。理由：Topology B 的最后稳定点是 100 QPS，阈值取其 80%（100 → 80）；80 QPS 本轮实测 P95 110ms、Error=0，距离 100–150 之间的拐点有约 47% 余量，也明显低于 193.8 QPS 的观测峰值。没有沿用 Topology A 的 8 QPS；没有取 100（贴着稳定点、无余量）；也没有取 120（已进入 150 QPS 的排队区）。阈值是每个 learning JVM 的本地 FlowRule，不是集群总配额。
+
+已写入 Nacos `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `learning-service-sentinel-flow-dev.json`，并读回校验；本地 `config/nacos/learning-service-sentinel-flow-dev.json` 同步为相同内容：
+
+```json
+[
+  {"resource":"learning-progress-report","limitApp":"default","grade":1,"count":80,"strategy":0,"controlBehavior":0}
+]
+```
+
+### C.5（Topology B）开启 Sentinel 后复测
+
+2026-11-02 12:25–12:35，Nacos 与本地文件均为 `count=80`，读回一致。负载为 0.75T / 1.0T / 1.5T / 2.0T（60 / 80 / 120 / 160 QPS），每轮 60 秒、ramp 5 秒：
+
+| 负载 | 线程 | 样本 | 实际 QPS | 200 | 429 | 429 占比 | 成功 QPS | 总 P95 ms | 成功 P95 ms | 总 P99 ms | 503 | timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 60（0.75T） | 120 | 3,603 | 60.872 | 3,569 | 34 | 0.9% | 60.297 | 611 | 467 | 1,332 | 0 | 0 |
+| 80（1.0T） | 160 | 4,895 | 82.580 | 4,367 | 528 | 10.8% | 73.672 | 53 | 54 | 93 | 0 | 0 |
+| 120（1.5T） | 240 | 7,346 | 123.891 | 4,772 | 2,574 | 35.0% | 80.593 | 54 | 63 | 99 | 0 | 0 |
+| 160（2.0T） | 320 | 9,702 | 164.835 | 4,725 | 4,977 | 51.3% | 80.277 | 102 | 122 | 238 | 0 | 0 |
+
+阈值附近的超量请求全部以 HTTP 429 返回，没有 503、5xx、timeout、connection refused/reset。成功吞吐在 1.0T–2.0T 下稳定在 73.7–80.6 QPS，与 80 QPS 阈值一致；2.0T 下 429 占比 51.3%，说明流控有效拦截了超量请求，且成功请求的 P95 仍只有 122ms。0.75T 轮出现 0.9% 的 429，是 Sentinel 1 秒窗口与 JMeter ConstantThroughputTimer 秒内突发叠加的正常窗口效应，不代表阈值低于 60 QPS。该轮总 P95 611ms、成功 P95 467ms，明显高于后续 80/120/160 轮的 53–63ms，是服务在约 30 秒空闲后的 JIT、连接池和 Feign 客户端冷启动造成的异常轮次，保留记录但不用于阈值判断。
+
+### C.6（Topology B）数据一致性、健康与回退
+
+- enabled 复测四个课时（199034–199037）刷盘后：Redis 进度 key 4,000 个，MySQL `learning_record` 4,000 行，缺失 0、不一致 0；completed=0，最大进度 10 秒；dirty set 每轮在 50.1–54.1 秒内清零，最终为 0；容量轮次 `event_outbox` 中没有新增 `LEARNING_COMPLETED` 事件。
+- 压测后校验：`http://192.168.10.102/nginx-health` 返回 200，Nacos readiness 返回 200，Sentinel Dashboard 返回 200；使用基准 token 对课时 199039 上报进度返回 HTTP 200、业务 code 200。
+- 本轮没有重建、重启或删除任何容器，没有修改 learning 业务代码、数据库结构或其它 Sentinel 资源。
+- 回退方式：将 Nacos 与本地 `config/nacos/learning-service-sentinel-flow-dev.json` 同时发布为 `[]` 即关闭 learning-progress-report 流控；恢复时重新发布上面的 80 QPS 规则。阈值是每个 learning JVM 的本地规则，不是集群总配额。
+- 限制：`collect_stats.py` 依赖 `VM_PASSWORD` 建立 SSH 采样，本轮后台环境未提供该变量，因此没有整机 CPU、容器 CPU、load average 和 Swap 采样，输出为 `Set VM_PASSWORD for SSH access`；本文不补填推测值，容量结论基于实际吞吐、P95/P99、错误码、dirty set 与 MySQL 一致性。结论来自 4 vCPU / 7,803 MiB、单 learning 实例、共享 14 容器 VM 和 1,000 用户令牌池；机器规格、实例数、用户规模或 Flush 参数变化后必须重测。Topology A 的 8 QPS 结论只适用于 2 vCPU / 3.7 GiB 资源受限环境，不再作为当前阈值依据。
