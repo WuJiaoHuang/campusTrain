@@ -840,3 +840,94 @@ JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，每轮间隔 30 秒；warm-up 20
 - 既有 `flowBlockedPlayUrlReturnsTooManyRequests`、`flowBlockedUploadUrlReturnsTooManyRequests`、`degradeBlockedPlayUrlReturnsVideoServiceUnavailable`、`degradeBlockedUploadUrlReturnsVideoServiceUnavailable` 继续验证 `FlowException → 429`、其它 Block → 503。
 
 **运行态 A/B 未执行，不能声称通过**：本机没有 VM 的 SSH 密码/密钥（`VM_PASSWORD` 未提供，密钥认证被拒），按约束不使用 Windows Docker Desktop，`docker context ls` 只有本地 Docker Desktop 端点，没有可用的远程 Docker context；运行中的 training-service 容器镜像也构建于本次代码修改之前。因此无法在不重建/重启训练服务的前提下打开 `campustrain.oss.fault` 并观察真实 503 与恢复。本轮只报告代码、配置、单元/集成测试证据，不伪造运行态数据。获得 VM 部署访问并获准替换 training-service 容器后，应执行：A) 连续请求无效 `lessonId`，随后有效 `lessonId` 仍为 200；B) Nacos 打开 fault，有效 `lessonId` 返回 503，等待超过 timeWindow=10 秒后关闭 fault，有效请求恢复 200。
+
+### E.7（Topology B）六项资源 enabled 最终高负载验收
+
+2026-11-02 15:54–16:06，六条 flow 规则全部启用，Nacos 与本地文件一致。入口继续为 `http://192.168.10.102/`，链路 Nginx → Gateway → 业务服务；每轮 60 秒、ramp 5 秒、轮次间隔 30 秒（community-like 与 unlike 之间额外完成预置用户修复）。成功 QPS 只统计 HTTP 200 且业务 `code=200` 的样本。六轮的目标都高于对应阈值，用于验证“超量被拦截、成功吞吐被阈值封顶”：
+
+| 资源 | 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | 200 | 429 | 503 | timeout / 连接异常 | 成功 QPS | 成功 P95 ms | 成功 P99 ms | Error% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| auth-login | 30 | 30 | 1,712 | 29.879 | 99.6% | 167.7 | 490 | 696 | 1,394 | 3,203 | 458 | 1,254 | 0 | 0 / 0 | 7.993 | 1,247 | 2,634 | 73.248 |
+| learning-progress-report | 160 | 320 | 7,641 | 139.289 | 87.1% | 1,083.7 | 2,759 | 4,802 | 8,277 | 9,025 | 3,516 | 4,125 | 0 | 0 / 0 | 64.117 | 7,152 | 8,602 | 53.985 |
+| community-like | 240 | 320 | 12,927 | 236.884 | 98.7% | 130.4 | 230 | 479 | 2,349 | 3,088 | 6,419 | 6,508 | 0 | 0 / 0 | 117.627 | 538 | 2,469 | 50.344 |
+| community-unlike | 200 | 320 | 10,385 | 202.425 | 101.2% | 190.5 | 411 | 813 | 2,464 | 3,123 | 6,511 | 3,874 | 0 | 0 / 0 | 126.913 | 891 | 2,649 | 37.304 |
+| oss-upload-url | 120 | 240 | 6,928 | 121.802 | 101.5% | 100.3 | 106 | 547 | 1,940 | 2,712 | 4,480 | 2,448 | 0 | 0 / 0 | 78.764 | 407 | 1,765 | 35.335 |
+| oss-play-url | 120 | 240 | 6,923 | 124.073 | 103.4% | 399.2 | 771 | 1,060 | 1,318 | 1,763 | 3,113 | 3,810 | 0 | 0 / 0 | 55.791 | 1,111 | 1,537 | 55.034 |
+
+**共同结论**：六项资源在高于阈值的负载下全部满足保护目标——成功吞吐均未超过对应阈值（auth 7.993 ≤ 8、learning 64.117 < 80、like 117.627 < 120、unlike 126.913 < 160、upload 78.764 < 80、play 55.791 < 80），超额请求全部为 HTTP 429，0 个 503、0 个 5xx、0 timeout、0 connection refused/reset。没有出现“把 429 伪装成成功”或“阈值未生效”的情况。
+
+**逐项说明**：
+
+- auth-login：30 QPS 目标实际发出 29.879，458 个 200、1,254 个 429，成功 7.993 QPS，与 8 QPS 阈值一致。成功 P95 1,247ms 是 30 QPS 下 BCrypt 与 4 vCPU 竞争的结果；2026-11-02 11:54 的 B.4 轮在最高 16 QPS 下成功 P95 为 585–828ms，本轮目标更高，延迟上升属于过载排队，不是超时或错误。
+- learning-progress-report：目标 160 QPS 下 JMeter 只发出 139.289 QPS，3,516 个 200、4,125 个 429，成功 64.117 QPS，低于 80 阈值；成功 P95 7,152ms。该轮与 C.5 的 160 QPS enabled 轮（成功 80.277 QPS、成功 P95 122ms）明显不同，属于**保留的异常轮次**：320 线程高并发 + 生成器秒内突发使请求在服务端排队，成功吞吐被压到 64 QPS；没有 5xx/503/timeout，流控仍把超量请求全部转为 429。由于缺少 CPU/线程采样，不能把原因精确归因到 CPU、Jetty 队列或 Feign/Redis 之一；该轮不用于容量结论，C.2/C.5 仍是 learning 阈值的依据。
+- community-like：目标 240 QPS 实际 236.884，成功 117.627 QPS，贴合 120 阈值；成功 P95 538ms、P99 2,469ms，429 占 50.3%，0 个 503。本轮使用 1,999 个最终验收用户令牌；首次点赞后同一用户会被 CSV 回收再次请求，因此后段包含幂等 `changed=false`，该轮只验证高负载保护，首次点赞容量仍以 D.2/D.6 的 11,000 用户、逐请求唯一 token 结果为准。
+- community-unlike：目标 200 QPS 实际 202.425，成功 126.913 QPS（低于 160 阈值），429 占 37.3%，0 个 503。取消前通过真实 `/community/like` 把 1,999 个用户全部预置为活跃状态（`likedAfterRepair=1999`、`stillMissing=0`），随后执行取消负载；最终问题 199000052 的活跃关系、Redis users/count、MySQL like_count 全部回到 0。与 like 相同，1,999 个用户被回收后包含幂等 `changed=false`，该轮验证保护而非重新测定 unlike 容量；unlike 阈值仍以 D.4/D.5 为准。
+- oss-upload-url：目标 120 QPS 实际 121.802，成功 78.764 QPS，贴合 80 阈值；成功 P95 407ms、P99 1,765ms，0 个 503。
+- oss-play-url：目标 120 QPS 实际 124.073，成功 55.791 QPS，明显低于 80 阈值，成功 P95 1,111ms；429 占 55.0%，0 个 503。原因是 240 线程的秒内突发叠加 OSS 客户端“每次请求创建/关闭”的既有实现，排队使成功吞吐低于规则上限；E.5 中用 16 线程平滑负载在 80 目标下已验证 72.595 成功 QPS、0.565% 429、0 个 503。该轮是异常轮次，不推翻 80 阈值，也不据此调整规则。
+
+本轮同样没有 CPU/load/Swap 采样：`collect_stats.py` 依赖 `VM_PASSWORD` 建立 SSH，输出为 `Set VM_PASSWORD for SSH access`。不补填推测值。
+
+### E.8（Topology B）最终业务回归
+
+2026-11-02 16:07–16:08，六轮压测结束后通过网关执行完整业务回归；除首次不带 token 的 growth 探测返回 401 外，其余均为 HTTP 200 且业务 `code=200`（growth ranking 返回裸对象/数组，无 `code` 字段）：
+
+| 检查 | 请求 | 结果 |
+| --- | --- | --- |
+| 登录 | `POST /auth/login`，基准账号 + BCrypt | 200，code=200 |
+| 培训详情 | `GET /training/get/199001` | 200，code=200，id=199001 |
+| 我的报名 | `GET /enrollment/list/mine?page=1&size=10` | 200，code=200，records=1 |
+| 开始学习 | `POST /learning/start/199041` | 200，code=200 |
+| 上报进度 | `POST /learning/report-progress/199041`，`progressSeconds=95` | 200，code=200，progressSeconds=95 |
+| 查询进度 | `GET /learning/get-progress/199041` | 200，code=200，progressSeconds=95 |
+| 培训完成度 | `GET /learning/get/training-progress/199001` | 200，code=200 |
+| 总榜 | `GET /growth/get/total-ranking?limit=10` | 200，8 条 |
+| 我的排名 | `GET /growth/get/my-ranking` | 200 |
+| 问题详情 | `GET /community/get/question/199000052` | 200，code=200 |
+| 点赞烟测 | `POST /community/like` | 200，`likedByMe=true`、`changed=true` |
+| 取消点赞烟测 | `POST /community/unlike` | 200，`likedByMe=false`、`changed=true` |
+| 上传 URL | `POST /video/create/upload-url` | 200，code=200，返回 URL（仅生成签名，不上传字节） |
+| 播放 URL | `GET /lesson/get/play-url/199041` | 200，code=200，返回 URL（仅生成签名，不下载字节） |
+
+首次 `GET /growth/get/total-ranking` 未带 token 返回 401，属于网关鉴权行为；带基准 token 重试后返回 200。回归没有创建/删除 OSS 对象，没有输出 AccessKey、JWT、密码或完整预签名 URL。
+
+### E.9（Topology B）最终数据一致性
+
+**community**。压测专用问题 199000052 初始 like_count=0。like 轮结束、dirty 清零后：MySQL like_count=1,998、活跃 `like_relation`=1,998、Redis users=1,998、Redis count=1,998、重复活跃用户=0；1 个用户在 240 QPS 下所有请求均为 429，未产生点赞，随后通过真实 `/community/like` 补齐（1 次请求、0 失败），使 1,999 个基准用户全部处于活跃状态。unlike 轮结束、dirty 清零后：MySQL like_count=0、活跃关系=0、Redis users=0、Redis count=0、重复活跃用户=0、负 like_count=0、`campustrain:community:like:dirty`=0。
+
+对 Redis 中存在 `count` 键的 18 个 benchmark 问题逐一核对：`Redis count = Redis users = MySQL question.like_count = MySQL 活跃 like_relation 数 = 活跃关系去重用户数`，0 个不一致；`like_count<0` 的问题为 0。未执行 TRUNCATE，未执行无 WHERE 的 DELETE，只清理/使用专用基准问题与基准用户。
+
+**learning**。最终轮使用课时 199041，1,000 个基准用户中 986 个至少获得一次 HTTP 200，14 个全部为 429，因此 MySQL 无记录；dirty 清零后：MySQL `learning_record` 986 行，Redis 进度 Hash 986 个，逐用户比较 `progressSeconds`、`durationSeconds`、`completed`，0 个不一致、0 个 MySQL 行缺 Redis 键，`campustrain:learning:dirty`=0。容量轮次的上报进度为 3–13 秒，未触发完成；E.8 回归中用户 1990100 单次上报到 95 秒（超过 90 秒完成阈值），Redis 与 MySQL 均变为 `progressSeconds=95, completed=1, status=2`，并新增 1 条 lesson 199041 的 `LEARNING_COMPLETED` 事件（该用户 lesson 199038 的 1 条事件是既有历史数据，与本轮无关）。进度字段没有回退，也没有超过 100 秒课时长度。
+
+### E.10（Topology B）最终配置、Dashboard 与健康检查
+
+- Nacos `campustrain-dev` / group `CAMPUS_TRAIN` 的 8 个 DataId 与本地 Git 文件逐字读回 `exactMatch=True`：`auth-service-sentinel-flow-dev.json`、`learning-service-sentinel-flow-dev.json`、`community-service-sentinel-flow-dev.json`、`training-service-sentinel-flow-dev.json`、`training-service-sentinel-degrade-dev.json`、`training-service-dev.yaml`、`campus-gateway-sentinel-flow-dev.json`、`enrollment-service-sentinel-flow-dev.json`。
+- 健康检查：`http://192.168.10.102/nginx-health` 200、Nacos readiness 200、Gateway `/actuator/health` 200（status=UP）、Sentinel Dashboard 根路径 200。Sentinel Dashboard 的详细资源/规则视图需要登录，本轮没有可用登录凭据，未尝试猜测或绕过；Dashboard 根路径可达仅证明页面服务存活，规则内容的权威来源是 Nacos 读回结果。
+- 本轮没有重建、重启或删除任何容器，没有修改业务代码、数据库结构、AccessKey 读取方式或 Stage10 旧阈值；`training-detail=800`、`training-enrollment-check=750`、`enrollment-create=160`、Gateway `enrollment-service=150` 保持不变。
+
+### E.11（Topology B）限制与最终规则表
+
+**限制**：
+
+1. 本机没有 VM SSH 密码/密钥，`VM_PASSWORD` 未提供，`collect_stats.py` 无法采集整机 CPU、容器 CPU、load average 和 Swap；所有 Topology B 轮次均输出 `Set VM_PASSWORD for SSH access`。本文不补填推测值，容量结论基于实际吞吐、延迟分位、HTTP 状态码、429/503、dirty set 与 MySQL/Redis 一致性。
+2. 运行态 `oss-play-url` degrade A/B 未执行：修改后的 training-service 代码不在运行容器中，且没有远程 Docker context/部署权限。代码、Nacos 配置、单元/集成测试（8 项全通过）是当前证据；获得部署权限后必须按 E.6 的 A/B 步骤补测，不能把测试通过等同于运行态通过。
+3. 最终验收的 community 轮次只有 1,999 个有效基准用户令牌；首次点赞/取消后 CSV 回收会产生幂等 `changed=false`。因此 E.7 的 like/unlike 轮只证明“高负载下 429 保护与最终一致性”，不替代 D.2/D.4/D.6 用约 11,000 个唯一用户完成的首次点赞/真实取消容量测定。
+4. E.7 learning 轮是异常轮次（成功 64.117 QPS、成功 P95 7,152ms，0 个 503/timeout），与 C.5 同目标轮差异明显；该轮不作为阈值依据，原因受限于无 CPU/线程采样，不能精确归因。
+5. Topology A（2 vCPU / 约 3.7 GiB、swap 明显）的历史数据保留在 B–E 各节前半部分，仅作为资源受限拓扑对照；当前所有阈值均以 Topology B（4 vCPU / 约 7.6 GiB、14 个 healthy 容器）实测为准，不沿用 Topology A 的 3/8/8/8/8/8。
+
+**最终规则表（Topology B）**：
+
+| 资源 | 服务 | 规则 | 最后稳定点 | 第一个明显拐点 | 已观测峰值/饱和区 | 最终阈值 | 依据 |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+| auth-login | auth-service | flow QPS | 10 QPS（10.120） | 15 QPS（CPU 92.9%/99.7%、load 10.0） | 15.150 QPS（40 目标） | 8 | B.2、B.3、B.4 |
+| learning-progress-report | learning-service | flow QPS | 100 QPS（103.474） | 150 QPS（P95 1,479ms） | 193.804 QPS（200 目标） | 80 | C.2、C.4、C.5 |
+| community-like | community-service | flow QPS | 150 QPS（155.374） | 200 QPS（35 个 503、P95 3,106ms） | 189.002 QPS（饱和吞吐） | 120 | D.2、D.3、D.6 |
+| community-unlike | community-service | flow QPS | 200 QPS（208.563） | 未继续上探（250/300 未测） | 208.563 QPS | 160 | D.4、D.5 |
+| oss-upload-url | training-service | flow QPS | 100 QPS（102.494） | 200 QPS（P95 1,722ms） | 392.296 QPS（含 12 个连接异常） | 80 | E.2、E.4、E.5 |
+| oss-play-url | training-service | flow QPS | 100 QPS（102.284） | 200 QPS（P95 942ms） | 382.501 QPS（含 48 个连接异常） | 80 | E.2、E.4、E.5 |
+| oss-play-url | training-service | degrade（异常比例） | — | — | — | 0.5 / 10s / 5 次 / 1000ms | E.6（代码与测试；运行态 A/B 待部署后补测） |
+| training-detail | training-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 800 | 保持不变 |
+| training-enrollment-check | training-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 750 | 保持不变 |
+| enrollment-create | enrollment-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 160 | 保持不变 |
+| enrollment-service（Gateway 路由） | campus-gateway | flow QPS | Stage10 历史值，本轮未重测 | — | — | 150 | 保持不变 |
+
+所有 flow 阈值都是每个 JVM/路由实例的本地 QPS 规则，不是集群总配额。`oss-play-url` 的 `BusinessException`（课时不存在、非视频课时、课时未绑定视频）已通过 `exceptionsToIgnore` 排除在异常比例统计之外，只有真正的系统异常参与熔断；BlockHandler 仍将 `FlowException` 映射为 HTTP 429、其它 Block 映射为 HTTP 503。
