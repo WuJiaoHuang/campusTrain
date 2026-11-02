@@ -728,3 +728,115 @@ D.3 只确定 `community-like`；`community-unlike` 的独立裸容量与阈值�
 - 取消点赞只测到 200 QPS 目标（实际 208.563 仍稳定），250/300 QPS 未测，无法证明 200 是取消路径的峰值；160 是对未知上限的保守取值。
 - 点赞与取消点赞阈值分别按单资源裸容量确定，未做 like+unlike 混合流量测试。两条规则各自允许 120/160 QPS，理论上可同时放行 280 QPS，超过本轮观测的单路径稳定吞吐；若生产存在显著混合写流量，必须先补混合压测再决定是否下调任一规则。
 - 结论来自 4 vCPU / 7,803 MiB、单 community 实例、单 Gateway、共享 14 容器 VM 和 11,000 用户令牌池；机器规格、实例数、用户规模、Redis/MySQL 参数或 flush 参数变化后必须重测。Topology A 的 8/8 结论只适用于 2 vCPU / 3.7 GiB 资源受限环境，不再作为当前阈值依据。
+
+### E.1（Topology B）环境、目标与口径
+
+2026-11-02 14:41–15:07 实测裸容量。入口固定为 `POST http://192.168.10.102/video/create/upload-url` 与 `GET http://192.168.10.102/lesson/get/play-url/199001`，链路 Nginx → Gateway → training-service，单 training 实例。两类请求都只生成 OSS 预签名 URL：上传接口只返回 objectKey 和 uploadUrl，不向 OSS PUT 任何字节；播放接口只对已绑定对象生成 GET 签名，不下载对象。未上传、未删除、未修改任何 OSS 对象，未改变 AccessKey 读取方式（仅 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`）。
+
+使用专用基准用户 1992001 通过真实 `/auth/login` 重新签发的 JWT（2 小时有效），令牌只写入 Git 忽略的 `scripts/sentinel-benchmark/results/tokens/`。裸容量前把 Nacos `campustrain-dev / CAMPUS_TRAIN / training-service-sentinel-flow-dev.json` 临时发布为仅保留 `training-detail=800`、`training-enrollment-check=750`，移除 `oss-upload-url`、`oss-play-url` 两条 flow；`training-service-sentinel-degrade-dev.json` 保持不变（`oss-play-url` 异常比例 0.5、timeWindow 10s、minRequestAmount 5、statIntervalMs 1000ms）。
+
+JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，每轮间隔 30 秒；warm-up 20 QPS / 15 秒，不计入结论。upload 与 play 分别在 training-service 上串行压测，不并发混合。实际 QPS、P90/P95/P99 按 JTL 全量样本计算；稳定性判据同前：实际吞吐 ≥ 目标 95%、无 5xx、无 timeout/connection refused/reset、P95 不明显跳升、整机不持续打满。`collect_stats.py` 的 SSH 采样仍因 `VM_PASSWORD` 缺失不可用，CPU/load/Swap 数据为空，不补填推测值。
+
+### E.2（Topology B）upload-url 裸容量（Sentinel flow 关闭）
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 / 429 / 5xx / timeout / conn error |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 20（warm-up） | 30 | 277 | 22.269 | — | 116.9 | 270 | 531 | 595 | 602 | 0 | 277 / 0 / 0 / 0 / 0 |
+| 50 | 80 | 2,914 | 51.293 | 102.6% | 60.7 | 170 | 356 | 598 | 999 | 0 | 2,914 / 0 / 0 / 0 / 0 |
+| 100 | 160 | 5,950 | 102.494 | 102.5% | 49.5 | 123 | 257 | 501 | 861 | 0 | 5,950 / 0 / 0 / 0 / 0 |
+| 200 | 300 | 10,907 | 197.440 | 98.7% | 331.3 | 922 | 1,722 | 2,670 | 4,791 | 0 | 10,907 / 0 / 0 / 0 / 0 |
+| 400 | 500 | 21,854 | 392.296 | 98.1% | 241.4 | 554 | 1,131 | 2,603 | 4,439 | 0.055 | 21,842 / 0 / 0 / 0 / 12 |
+| 600 | 700 | 22,231 | 436.698 | 72.8% | 879.9 | 1,929 | 3,431 | 5,782 | 10,841 | 25.640 | 16,531 / 0 / 32 / 0 / 5,668 |
+| 800 | 900 | 36,612 | 669.287 | 83.7% | 671.3 | 1,661 | 2,263 | 4,274 | 11,603 | 39.181 | 22,267 / 0 / 15 / 0 / 14,330 |
+
+**结论**：50 与 100 QPS 是稳定点，实际 51.293 / 102.494，P95 356 / 257ms，0 错误；50 QPS 的 P95 高于 100 QPS，是 warm-up 后首轮连接池/JIT 尚未完全稳定，保留但不判为拐点。200 QPS 实际 197.440（98.7%）且 0 错误，但 Avg 从 49.5ms 升到 331.3ms、P95 从 257ms 跳到 1,722ms、P99 2,670ms，属于明显排队拐点，不满足“P95 不明显跳升”。400 QPS 出现 12 个 `NoHttpResponseException`（0.055%），已违反“无 connection error”；600/800 QPS 出现大量 SocketException、NoHttpResponse、500 与 504，实际吞吐回落到 436.698 / 669.287，明确进入饱和。最后稳定点是 100 QPS；稳定吞吐峰值 102.494 QPS。600 的 Avg 高于 800 是失败连接快速返回造成的统计现象，不表示 800 更稳定。
+
+### E.3（Topology B）play-url 裸容量（Sentinel flow 关闭）
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 / 429 / 5xx / timeout / conn error |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 20（warm-up） | 30 | 277 | 22.531 | — | 96.5 | 177 | 508 | 533 | 541 | 0 | 277 / 0 / 0 / 0 / 0 |
+| 50 | 80 | 2,920 | 51.442 | 102.9% | 33.7 | 33 | 88 | 588 | 758 | 0 | 2,920 / 0 / 0 / 0 / 0 |
+| 100 | 160 | 5,867 | 102.284 | 102.3% | 42.2 | 67 | 115 | 736 | 1,058 | 0 | 5,867 / 0 / 0 / 0 / 0 |
+| 200 | 300 | 11,523 | 201.458 | 100.7% | 152.5 | 446 | 942 | 1,689 | 2,708 | 0 | 11,523 / 0 / 0 / 0 / 0 |
+| 400 | 500 | 21,705 | 382.501 | 95.6% | 448.0 | 1,171 | 1,563 | 2,682 | 3,942 | 0.221 | 21,657 / 0 / 0 / 0 / 48 |
+| 600 | 700 | 29,960 | 532.546 | 88.8% | 715.7 | 1,634 | 2,147 | 3,687 | 8,616 | 21.205 | 23,607 / 0 / 0 / 0 / 6,353 |
+| 800 | 900 | 37,404 | 662.534 | 82.8% | 718.0 | 1,804 | 2,323 | 3,858 | 8,335 | 42.306 | 21,580 / 0 / 0 / 0 / 15,824 |
+
+**结论**：50 与 100 QPS 稳定，实际 51.442 / 102.284，P95 88 / 115ms，0 错误。200 QPS 实际 201.458（100.7%）且 0 错误，但 Avg 42.2 → 152.5ms、P95 115 → 942ms、P99 736 → 1,689ms，出现明显排队，是第一个拐点。400 QPS 虽然实际 382.501（95.6%），但 P95 1,563ms，并出现 48 个连接异常（0.221%），不满足稳定性判据；600/800 QPS 连接异常和吞吐回落进一步确认饱和。最后稳定点是 100 QPS；稳定吞吐峰值 102.284 QPS。play-url 的 200 QPS 退化比 upload-url 稍轻（P95 942ms 对 1,722ms），但两者拐点位置一致，均未达到可接受稳定标准。
+
+### E.4（Topology B）最终阈值（oss-upload-url / oss-play-url）
+
+**oss-upload-url = 80 QPS/实例**。最后稳定点 100 QPS（实际 102.494，P95 257ms，0 错误），阈值取 80%（100 → 80）；80 QPS 位于 50–100 的稳定平台内，距离 100–200 的排队拐点有 20% 目标余量，也远低于 400 QPS 起出现的连接异常区。没有沿用 Topology A 的 8 QPS；没有取 100（贴着稳定点、无余量）；也没有取 120/160（已进入 P95 942–1,722ms 的排队区）。
+
+**oss-play-url = 80 QPS/实例**。最后稳定点同为 100 QPS（实际 102.284，P95 115ms，0 错误），阈值取 80%；200 QPS 时 P95 942ms、400 QPS 起出现连接异常，80 QPS 留出与 upload 相同的 20% 目标余量。两条规则数值相同是两次独立裸容量都落在 100 QPS 稳定点的结果，不是机械统一；upload 与 play 分别有独立的 50/100/200/400/600/800 数据。阈值是每个 training JVM 的本地 FlowRule，不是集群总配额；旧 Stage10 规则 `training-detail=800`、`training-enrollment-check=750` 保持不变。
+
+已写入 Nacos `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `training-service-sentinel-flow-dev.json` 与本地文件，并读回 exactMatch=True：
+
+```json
+[
+  {"resource":"training-detail","limitApp":"default","grade":1,"count":800,"strategy":0,"controlBehavior":0},
+  {"resource":"training-enrollment-check","limitApp":"default","grade":1,"count":750,"strategy":0,"controlBehavior":0},
+  {"resource":"oss-upload-url","limitApp":"default","grade":1,"count":80,"strategy":0,"controlBehavior":0},
+  {"resource":"oss-play-url","limitApp":"default","grade":1,"count":80,"strategy":0,"controlBehavior":0}
+]
+```
+
+### E.5（Topology B）开启 Sentinel 后复测
+
+2026-11-02 15:10–15:30，Nacos 与本地 `training-service-sentinel-flow-dev.json` 均为 `oss-upload-url=80`、`oss-play-url=80`，读回一致。按 0.75T / 1.0T / 1.5T / 2.0T（60 / 80 / 120 / 160 QPS）复测，每轮 60 秒、ramp 5 秒、轮次间隔 30 秒；成功 QPS 只统计 HTTP 200 且业务 `code=200` 的样本。
+
+**oss-upload-url**
+
+| 负载 | 线程 | 样本 | 实际 QPS | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | 200 | 429 | 503 | timeout / 连接异常 | 成功 QPS | 成功 P95 ms | 成功 P99 ms | Error% |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| 60 | 100 | 3,216 | 59.003 | 255.1 | 456 | 1,852 | 3,633 | 4,981 | 2,626 | 590 | 0 | 0 / 0 | 48.178 | 1,938 | 3,817 | 18.346 |
+| 80 | 160 | 4,540 | 82.977 | 102.7 | 226 | 471 | 1,170 | 1,533 | 2,907 | 1,633 | 0 | 0 / 0 | 53.131 | 383 | 815 | 35.969 |
+| 120 | 240 | 7,170 | 123.819 | 36.7 | 83 | 160 | 448 | 922 | 4,644 | 2,526 | 0 | 0 / 0 | 80.198 | 152 | 419 | 35.230 |
+| 160 | 320 | 9,203 | 165.029 | 82.4 | 152 | 285 | 1,156 | 1,946 | 4,459 | 4,744 | 0 | 0 / 0 | 79.959 | 213 | 1,079 | 51.548 |
+
+**oss-play-url**
+
+| 负载 | 线程 | 样本 | 实际 QPS | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | 200 | 429 | 503 | timeout / 连接异常 | 成功 QPS | 成功 P95 ms | 成功 P99 ms | Error% |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: |
+| 60* | 100 | 3,023 | 59.536 | 169.6 | 165 | 686 | 3,324 | 3,632 | 2,575 | 448 | 0 | 0 / 0 | 50.713 | 852 | 3,408 | 14.820 |
+| 80 | 160 | 4,647 | 82.233 | 79.1 | 150 | 313 | 1,316 | 1,527 | 3,215 | 1,432 | 0 | 0 / 0 | 56.893 | 283 | 1,298 | 30.816 |
+| 120 | 240 | 6,792 | 121.262 | 128.7 | 101 | 582 | 3,175 | 3,842 | 4,444 | 2,348 | 0 | 0 / 0 | 79.342 | 582 | 3,351 | 34.570 |
+| 160* | 320 | 8,338 | 151.405 | 518.9 | 1,767 | 3,249 | 5,707 | 9,644 | 4,091 | 4,247 | 0 | 0 / 0 | 74.286 | 4,158 | 7,128 | 50.935 |
+
+\* play 60 目标的样本窗口为 50.776 秒、play 160 为 55.071 秒；JMeter 调度尾段没有新请求，QPS 按实际首末样本窗口计算，不与 60 秒窗口轮次直接比较。
+
+**429 的来源是负载发生器的秒内突发，不是规则低于目标**。按 JTL 首请求时间戳统计每秒实际发出量：upload 在 60 目标下中位 56/s、最大 100/s，36.4% 的秒超过 80；80 目标下中位 120/s、最大 160/s，50.0% 的秒超过 80；120 目标下中位 139/s、最大 193/s，98.3% 超过 80；160 目标下中位 182/s、最大 287/s，100% 超过 80。play 在 60 目标下中位 54/s、最大 100/s；80 目标下中位 131/s、最大 134/s；120 目标下中位 110/s、最大 204/s；160 目标下中位 153/s、最大 320/s。ConstantThroughputTimer 在低目标速率下不是匀速发送，而是“秒内突发 + 空档”，Sentinel 的 1 秒窗口只放行每个窗口内的 80 个请求，因此 60/80 目标仍会出现 429；120/160 目标下几乎每秒都超过 80，成功吞吐稳定封顶在 79.3–80.2 QPS（play 160 异常轮除外）。
+
+**平滑负载对照**。为区分“规则错误”和“发生器突发”，用较少线程重跑 80 目标：
+
+| 资源 | 目标 | 线程 | 样本 | 实际 QPS | 200 | 429 | 503 | timeout / 连接异常 | 成功 QPS | 总 P95 ms | 成功 P95 ms | 总 P99 ms | Error% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| upload | 80 | 24 | 4,175 | 75.755 | 4,068 | 107 | 0 | 0 / 0 | 73.813 | 69 | 73 | 1,054 | 2.563 |
+| play | 80 | 16 | 4,249 | 73.007 | 4,225 | 24 | 0 | 0 / 0 | 72.595 | 256 | 258 | 664 | 0.565 |
+
+两轮实际发出量只有 73–76 QPS（低线程数下 ConstantThroughputTimer 也未能精确压到 80），429 仅 2.56% / 0.57%，证明 80 QPS 规则在平滑流量下不会大面积拒绝；前面 30–36% 的 429 是发生器秒内突发的产物。JTL 按自然秒统计的 200 数在突发轮次可到 100–147/s：Sentinel 使用 1 秒滑动窗口（默认 2 个 500ms 桶），自然秒可跨两个窗口边界，滑动窗口内的放行量仍受 80 限制，这不是规则失效。
+
+**异常轮次（保留，不用于阈值判断）**：
+- upload 60 目标是规则发布后的首轮，成功 P95 1,938ms，明显高于后续 80/120/160 轮的 383/152/213ms；该轮 36.4% 的秒突发超过 80，叠加冷启动/连接池预热，保留为异常轮次。
+- play 160 目标成功 QPS 74.286、成功 P95 4,158ms、429 占 50.9%，0 个 503/timeout；秒级发出量最大 320/s、自然秒放行峰值 139/s。OSS 客户端按请求创建/关闭，突发下排队明显，该轮不作为容量结论。
+- 全部 enabled 轮次 0 个 503、0 timeout、0 connection refused/reset、0 其它连接错误；429 全部来自 `FlowException`。
+
+本轮 enabled 复测同样没有 CPU/load/Swap 采样：`collect_stats.py` 依赖 `VM_PASSWORD` 建立 SSH，本轮环境未提供该变量，输出为 `Set VM_PASSWORD for SSH access`。不补填推测值；容量结论基于实际吞吐、P95/P99、错误码和一致性数据。
+
+### E.6（Topology B）oss-play-url degrade 修复与受控注入
+
+**设计缺陷**：`LessonController#getLessonPlayUrl` 原 `@SentinelResource` 没有 `exceptionsToIgnore`，Sentinel 会把 `BusinessException`（课时不存在、非视频课时、课时未绑定视频）计入异常比例。无效 `lessonId` 是客户端/数据校验错误，不是 OSS 系统故障；Topology A 的 E.6 实验正是用无效 `lessonId` 在 8 次并发后打开了熔断，正常请求随后 503，说明该口径会把业务错误放大成可用性故障。
+
+**修复**：`@SentinelResource(value = "oss-play-url", blockHandler = "handleOssPlayUrlBlock", exceptionsToIgnore = BusinessException.class)`。业务异常不再进入 Sentinel 的异常统计，仍由全局异常处理按原契约返回 `code=400`；只有凭据缺失、签名失败等系统异常才参与异常比例熔断。HTTP 接口、响应结构、事务和 AccessKey 读取方式（仅 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`）均未改变。
+
+**受控故障注入**：新增 `OssFaultProperties`（`campustrain.oss.fault.enabled=false`、`campustrain.oss.fault.play-url-exception=false`，默认关闭，`@RefreshScope` 可在 Nacos 动态打开/关闭）。`OssServiceImpl.generatePlayUrl` 在两个开关都打开时、调用 OSS 签名前抛出 `IllegalStateException("Injected OSS play URL system fault")`；不抛 `BusinessException`，不写文件、不创建或删除 OSS 对象，不改变 AccessKey。Nacos `training-service-dev.yaml` 与本地 `config/nacos/training-service-dev.yaml` 同步了默认关闭的配置块。
+
+**单元/集成测试**：`mvn -pl training-service test -Dtest=OssSentinelTest,OssFaultInjectionTest -DfailIfNoTests=false` 实测 `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0`（`OssSentinelTest` 6 项、`OssFaultInjectionTest` 2 项）。新增用例：
+
+- `businessExceptionDoesNotOpenPlayUrlDegrade`：异常比例规则（count=0.1、minRequestAmount=1、statIntervalMs=1000）下连续 3 次 `BusinessException`，等待 1.1 秒后再 3 次仍为 `BusinessException`，没有被 503 拦截，证明业务异常不进入统计。
+- `systemExceptionOpensPlayUrlDegrade`：1 次 `IllegalStateException` 后等待 1.1 秒，有效请求返回 HTTP 503、`"视频服务暂时不可用，请稍后重试"`，证明系统异常会打开熔断。
+- `OssFaultInjectionTest`：默认开关为 false；打开后 `generatePlayUrl` 在 OSS 调用前抛出 `IllegalStateException`。
+- 既有 `flowBlockedPlayUrlReturnsTooManyRequests`、`flowBlockedUploadUrlReturnsTooManyRequests`、`degradeBlockedPlayUrlReturnsVideoServiceUnavailable`、`degradeBlockedUploadUrlReturnsVideoServiceUnavailable` 继续验证 `FlowException → 429`、其它 Block → 503。
+
+**运行态 A/B 未执行，不能声称通过**：本机没有 VM 的 SSH 密码/密钥（`VM_PASSWORD` 未提供，密钥认证被拒），按约束不使用 Windows Docker Desktop，`docker context ls` 只有本地 Docker Desktop 端点，没有可用的远程 Docker context；运行中的 training-service 容器镜像也构建于本次代码修改之前。因此无法在不重建/重启训练服务的前提下打开 `campustrain.oss.fault` 并观察真实 503 与恢复。本轮只报告代码、配置、单元/集成测试证据，不伪造运行态数据。获得 VM 部署访问并获准替换 training-service 容器后，应执行：A) 连续请求无效 `lessonId`，随后有效 `lessonId` 仍为 200；B) Nacos 打开 fault，有效 `lessonId` 返回 503，等待超过 timeWindow=10 秒后关闭 fault，有效请求恢复 200。

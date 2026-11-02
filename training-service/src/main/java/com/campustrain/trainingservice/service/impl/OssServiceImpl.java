@@ -8,6 +8,7 @@ import com.aliyun.oss.common.auth.DefaultCredentialProvider;
 import com.aliyun.oss.common.comm.SignVersion;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
+import com.campustrain.trainingservice.config.OssFaultProperties;
 import com.campustrain.trainingservice.config.OssProperties;
 import com.campustrain.trainingservice.service.OssService;
 import java.time.Instant;
@@ -21,6 +22,7 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class OssServiceImpl implements OssService {
     private final OssProperties properties;
+    private final OssFaultProperties faultProperties;
 
     private <T> T withClient(Function<OSS, T> action) {
         if (!StringUtils.hasText(properties.getAccessKeyId()) || !StringUtils.hasText(properties.getAccessKeySecret())) {
@@ -53,6 +55,9 @@ public class OssServiceImpl implements OssService {
 
     @Override
     public String generatePlayUrl(String key, Instant expiry) {
+        if (faultProperties.isEnabled() && faultProperties.isPlayUrlException()) {
+            throw new IllegalStateException("Injected OSS play URL system fault");
+        }
         return sign(key, null, expiry, HttpMethod.GET);
     }
 

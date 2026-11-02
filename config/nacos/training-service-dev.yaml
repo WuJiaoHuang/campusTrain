@@ -12,6 +12,9 @@ campustrain:
     upload-expire-seconds: 900
     play-expire-seconds: 600
     max-video-size: 524288000
+    fault:
+      enabled: false
+      play-url-exception: false
   training:
     allow-create: true
     fault:

@@ -9,6 +9,7 @@ import com.campustrain.trainingservice.dto.LessonCreateDTO;
 import com.campustrain.trainingservice.dto.LessonSortDTO;
 import com.campustrain.trainingservice.dto.LessonUpdateDTO;
 import com.campustrain.trainingservice.dto.VideoBindDTO;
+import com.campustrain.trainingservice.exception.BusinessException;
 import com.campustrain.trainingservice.service.LessonService;
 import com.campustrain.trainingservice.vo.LessonVO;
 import com.campustrain.trainingservice.vo.VideoPlayVO;
@@ -50,7 +51,8 @@ public class LessonController {
 
     @Operation(summary = "获取视频播放地址")
     @GetMapping("/get/play-url/{lessonId}")
-    @SentinelResource(value = "oss-play-url", blockHandler = "handleOssPlayUrlBlock")
+    @SentinelResource(value = "oss-play-url", blockHandler = "handleOssPlayUrlBlock",
+            exceptionsToIgnore = BusinessException.class)
     public ResponseEntity<Result<VideoPlayVO>> getLessonPlayUrl(
             @Parameter(description = "课时ID") @PathVariable("lessonId") Long lessonId) {
         return ResponseEntity.ok(Result.success(lessonService.getLessonPlayUrl(lessonId)));

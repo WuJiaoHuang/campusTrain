@@ -1,6 +1,6 @@
 [
   {"resource":"training-detail","limitApp":"default","grade":1,"count":800,"strategy":0,"controlBehavior":0},
   {"resource":"training-enrollment-check","limitApp":"default","grade":1,"count":750,"strategy":0,"controlBehavior":0},
-  {"resource":"oss-upload-url","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0},
-  {"resource":"oss-play-url","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0}
+  {"resource":"oss-upload-url","limitApp":"default","grade":1,"count":80,"strategy":0,"controlBehavior":0},
+  {"resource":"oss-play-url","limitApp":"default","grade":1,"count":80,"strategy":0,"controlBehavior":0}
 ]

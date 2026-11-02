@@ -1,16 +1,20 @@
 package com.campustrain.trainingservice.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.alibaba.csp.sentinel.annotation.aspectj.SentinelResourceAspect;
 import com.alibaba.csp.sentinel.slots.block.RuleConstant;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeException;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
 import com.campustrain.trainingservice.dto.VideoUploadDTO;
+import com.campustrain.trainingservice.exception.BusinessException;
 import com.campustrain.trainingservice.service.LessonService;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -48,6 +52,38 @@ class OssSentinelTest {
         assertEquals(503, response.getStatusCode().value());
         assertEquals("视频服务暂时不可用，请稍后重试", response.getBody().getMessage());
         verifyNoInteractions(lessonService);
+    }
+
+    @Test
+    void businessExceptionDoesNotOpenPlayUrlDegrade() {
+        LessonService lessonService = mock(LessonService.class);
+        when(lessonService.getLessonPlayUrl(9L)).thenThrow(new BusinessException("课时不存在"));
+        LessonController controller = playUrlController(lessonService);
+        loadExceptionRatioRule();
+
+        for (int index = 0; index < 3; index++) {
+            BusinessException exception = assertThrows(BusinessException.class, () -> controller.getLessonPlayUrl(9L));
+            assertEquals("课时不存在", exception.getMessage());
+        }
+        sleepPastStatInterval();
+        for (int index = 0; index < 3; index++) {
+            BusinessException exception = assertThrows(BusinessException.class, () -> controller.getLessonPlayUrl(9L));
+            assertEquals("课时不存在", exception.getMessage());
+        }
+    }
+
+    @Test
+    void systemExceptionOpensPlayUrlDegrade() {
+        LessonService lessonService = mock(LessonService.class);
+        when(lessonService.getLessonPlayUrl(9L)).thenThrow(new IllegalStateException("OSS failure"));
+        LessonController controller = playUrlController(lessonService);
+        loadExceptionRatioRule();
+
+        assertThrows(IllegalStateException.class, () -> controller.getLessonPlayUrl(9L));
+        sleepPastStatInterval();
+        var response = controller.getLessonPlayUrl(9L);
+        assertEquals(503, response.getStatusCode().value());
+        assertEquals("视频服务暂时不可用，请稍后重试", response.getBody().getMessage());
     }
 
     @Test
@@ -92,5 +128,24 @@ class OssSentinelTest {
         rule.setGrade(RuleConstant.FLOW_GRADE_QPS);
         rule.setCount(0);
         FlowRuleManager.loadRules(List.of(rule));
+    }
+
+    private void sleepPastStatInterval() {
+        try {
+            Thread.sleep(1_100);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for Sentinel statistics window", exception);
+        }
+    }
+
+    private void loadExceptionRatioRule() {
+        DegradeRule rule = new DegradeRule("oss-play-url");
+        rule.setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO);
+        rule.setCount(0.1);
+        rule.setTimeWindow(10);
+        rule.setMinRequestAmount(1);
+        rule.setStatIntervalMs(1000);
+        DegradeRuleManager.loadRules(List.of(rule));
     }
 }
