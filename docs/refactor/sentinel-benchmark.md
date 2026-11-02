@@ -1,6 +1,8 @@
 # Sentinel 新增资源压测与最终治理
 
-## 环境与拓扑
+> **数据拓扑说明**：本文件保留两轮结果。Topology A（2 vCPU / 约 3.7 GiB RAM，2026-11-02 00:34–04:55）是资源受限环境下的历史对照；Topology B（4 vCPU / 约 7.6 GiB RAM，2026-11-02 11:25 起）是最终正式基准。Topology A 的原文、表格与结论均未删除、未覆盖；Topology B 从文末「Topology B（4 vCPU / 7.6 GiB）正式基准」开始。最终 Sentinel 阈值以 Topology B 的实测结果为准。
+
+## Topology A 环境与拓扑（历史）
 
 2026-11-02 实测。压测客户端是 Windows 本机的 JMeter 5.6.3 CLI，外部业务入口是 VMware CentOS 虚拟机 `http://192.168.10.102/` 的 Nginx，再到 Gateway。未使用 Windows Docker Desktop。Nacos Discovery 实时查询显示 campus-gateway、auth-service、learning-service、community-service、training-service、enrollment-service、user-service、growth-service 各 1 个健康实例；目标容器内端口分别为 8080、8084、8087、8090、8082、8083、8081、8088。MySQL、Redis、Nacos、RabbitMQ 在同一虚拟机的 Docker Compose 基础设施中；Sentinel Dashboard `http://192.168.10.102:8858/` 实测 HTTP 200。当前是单 Gateway、单业务实例的 smoke 拓扑，不是 Stage10 旧版 Windows 本机多实例拓扑。
 
@@ -467,7 +469,7 @@ Sentinel Dashboard 登录成功；当前 healthy training 实例 `172.19.0.9:871
 - degrade 实验用无效 lessonId 注入方法异常，业务全局异常处理器返回 HTTP 200 + body code 400；这是本文明确记录的口径，不代表 Sentinel 把异常 HTTP 状态当作成功。
 - 单实例结果不代表多实例总容量；阈值是每实例本地规则。若需回退，删除对应 flow/degrade 条目或恢复为空数组即可；本次没有修改旧阈值和业务代码。
 
-## 最终资源表
+## Topology A 最终资源表（历史）
 
 | 资源 | 服务 | 保护类型 | 裸容量稳定点 | 拐点 | 峰值 | 最终 flow QPS | degrade 规则 | 证据 |
 | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
@@ -481,3 +483,75 @@ Sentinel Dashboard 登录成功；当前 healthy training 实例 `172.19.0.9:871
 | community-unlike | community-service | flow | 30 QPS（29.464，P95 1,348ms） | 50 QPS（72.4%，P95 3,639ms） | 36.22 QPS | 8 | — | 本文 D.4、D.6 |
 | oss-upload-url | training-service | flow | 10 QPS（10.472，P95 133ms） | 20 QPS（19.426，P95 4,647ms） | 48.808 QPS @50 目标 | 8 | — | 本文 E.2、E.5 |
 | oss-play-url | training-service | flow + 异常比例 degrade | 10 QPS（10.498，P95 145ms） | 20 QPS（20.926，P95 1,623ms） | 46.777 QPS @50 目标 | 8 | grade=1、比例>0.5、minRequestAmount=5、statIntervalMs=1000、timeWindow=10s | 本文 E.3、E.5、E.6 |
+
+## Topology B（4 vCPU / 7.6 GiB）正式基准
+
+> 以下为最终正式基准。Topology B 的虚拟机为 4 vCPU、MemTotal 7,803 MiB、Swap 3.0 GiB（压测期间使用 0）、14 个 Docker Compose 容器均 healthy；正式空载基线 CPU idle 约 87.6%、1min load 约 1.88。所有入口仍为 `http://192.168.10.102/`，链路 Nginx → Gateway → 单业务实例，不使用 Windows Docker Desktop。
+
+### B.1 环境与口径（Topology B）
+
+2026-11-02 11:25–11:39 实测。入口固定为 `POST http://192.168.10.102/auth/login`，链路 Nginx → Gateway → auth-service，单 auth 实例。请求使用专用基准账号 `benchmark_sentinel_student`（userId=1990001）和真实 `AuthenticationManager` + `BCryptPasswordEncoder.matches()`；数据库哈希成本因子为 `$2b$10$`，不是 mock，也不是错误密码。密码只通过进程环境变量注入 JMeter，不写入仓库、文档、脚本或日志。
+
+压测前已将 Nacos `campustrain-dev / CAMPUS_TRAIN / auth-service-sentinel-flow-dev.json` 临时发布为 `[]` 并读回确认，裸容量阶段没有流控。JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，warm-up 3 QPS / 20 秒不计入结论；实际 QPS 按 JTL 首请求开始至末请求完成的时间窗计算，P90/P95/P99 为全量样本 nearest-rank。稳定性判据：实际吞吐 ≥ 目标 95%、无 5xx、无 timeout/connection refused/reset、业务数据正确、P95 不明显跳升、整机 CPU 不持续打满。
+
+### B.2 未治理裸容量（auth-login）
+
+| 目标 QPS | 线程 | 样本 | 实际 QPS | 达标率 | Avg ms | P90 ms | P95 ms | P99 ms | Max ms | Error% | 200 / 429 / 503 / timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 5 | 10 | 302 | 5.126 | 102.5% | 286 | 386 | 446 | 509 | 577 | 0 | 302 / 0 / 0 / 0 |
+| 10 | 20 | 585 | 10.120 | 101.2% | 554 | 966 | 1,318 | 1,811 | 2,062 | 0 | 585 / 0 / 0 / 0 |
+| 15 | 30 | 875 | 14.862 | 99.1% | 1,143 | 1,839 | 2,110 | 2,552 | 2,940 | 0 | 875 / 0 / 0 / 0 |
+| 20 | 40 | 780 | 12.884 | 64.4% | 2,864 | 4,172 | 5,751 | 9,451 | 12,131 | 0 | 780 / 0 / 0 / 0 |
+| 30 | 60 | 862 | 14.693 | 49.0% | 3,976 | 5,406 | 5,691 | 6,117 | 6,812 | 0 | 862 / 0 / 0 / 0 |
+| 40 | 80 | 903 | 15.150 | 37.9% | 5,126 | 7,126 | 7,489 | 8,099 | 9,757 | 0 | 903 / 0 / 0 / 0 |
+| 50 | 100 | 905 | 15.037 | 30.1% | 6,449 | 8,754 | 9,395 | 10,452 | 14,041 | 0 | 905 / 0 / 0 / 0 |
+
+warm-up 3 QPS / 6 线程：59 样本、实际 3.235 QPS、P95 889ms、Error=0，仅用于预热，不纳入容量结论。
+
+CPU 采样（每 10 秒，去掉首末各 1 个采样点；auth 容器百分比是单核百分比，可超过 100%；机器 CPU 为整机百分比）：
+
+| 目标 QPS | 机器 CPU 均值/峰值 | auth 容器 CPU 均值/峰值 | load1 均值/峰值 | 观察 |
+| ---: | ---: | ---: | ---: | --- |
+| 5 | 46.3% / 55.4% | 120.1% / 185.8% | 2.3 / 2.4 | 轻载，P95 446ms |
+| 10 | 69.7% / 81.6% | 214.8% / 290.0% | 6.4 / 7.5 | 最后稳定点，仍有余量 |
+| 15 | 92.9% / 99.7% | 339.7% / 359.0% | 10.0 / 13.7 | 吞吐达标，但 CPU 已持续接近打满 |
+| 20 | 89.6% / 99.8% | 380.2% / 424.1% | 20.0 / 28.3 | 吞吐回落，排队明显 |
+| 30 | 86.9% / 99.9% | 300.6% / 345.1% | 28.0 / 40.6 | 饱和平台，P95 5.7s |
+| 40 | 86.7% / 99.9% | 347.3% / 394.4% | 38.3 / 54.4 | 峰值吞吐 15.150，P95 7.5s |
+| 50 | 87.3% / 99.9% | 364.9% / 385.1% | 50.4 / 70.8 | 过载，P95 9.4s |
+
+**结论**：最后稳定点是 10 QPS（实际 10.120，为目标 101.2%，Error=0，P95 1,318ms，机器 CPU 69.7%/81.6%，load 6.4）；第一个明显拐点在 10 与 15 QPS 之间，15 QPS 虽然实际 14.862（99.1%）且 0 错误，但机器 CPU 已到 92.9%/99.7%、load 10.0，按“CPU 不持续打满”的判据不算稳定点；已观测吞吐峰值为 15.150 QPS（40 QPS 目标）。20/30/40/50 QPS 目标下吞吐停留在 12.884–15.150，P95 5.7–9.4 秒、load 20–71，属于饱和平台，不是可用的稳定容量。瓶颈是 BCrypt 的 CPU 成本与 4 vCPU 共享 VM，而不是业务异常或流控；全程 0 个 5xx、0 timeout、0 connection refused/reset。
+
+### B.3 最终阈值（auth-login）
+
+**auth-login = 8 QPS/实例**。理由：Topology B 的最后稳定点是 10 QPS，阈值取 80%（10 → 8），低于 10–15 之间的拐点，也明显低于已观测峰值 15.150 QPS；8 QPS 为同一 VM 上的 GC、Nacos 心跳、Gateway 和其它业务实例保留约 20% 的吞吐余量。没有沿用 Topology A 的 3 QPS，也没有取 10（贴着稳定点、无余量）或 12（已进入 15 QPS 的 CPU 饱和区）。阈值是每个 auth JVM 的本地 FlowRule，不是集群总配额。
+
+已写入 Nacos `campustrain-dev`、group `CAMPUS_TRAIN`、DataId `auth-service-sentinel-flow-dev.json`，并读回校验；本地 `config/nacos/auth-service-sentinel-flow-dev.json` 同步为相同内容：
+
+```json
+[
+  {"resource":"auth-login","limitApp":"default","grade":1,"count":8,"strategy":0,"controlBehavior":0}
+]
+```
+
+### B.4 开启 Sentinel 后复测
+
+2026-11-02 11:48–11:54，Nacos 与本地文件均为 `count=8`，读回一致。仍使用真实账号与 BCrypt 校验，负载为 0.75T / 1.0T / 1.5T / 2.0T（6 / 8 / 12 / 16 QPS），每轮 60 秒、ramp 5 秒：
+
+| 负载 | 线程 | 样本 | 实际 QPS | 200 | 429 | 429 占比 | 成功 QPS | 总 P95 ms | 成功 P95 ms | 总 P99 ms | 503 | timeout |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6（0.75T） | 8 | 345 | 5.905 | 345 | 0 | 0% | 5.905 | 622 | 622 | 2,167 | 0 | 0 |
+| 8（1.0T） | 12 | 471 | 8.143 | 353 | 118 | 25.1% | 6.116 | 423 | 585 | 913 | 0 | 0 |
+| 12（1.5T） | 18 | 715 | 12.253 | 430 | 285 | 39.9% | 7.369 | 326 | 388 | 484 | 0 | 0 |
+| 16（2.0T） | 24 | 953 | 16.163 | 413 | 540 | 56.7% | 7.005 | 563 | 828 | 1,153 | 0 | 0 |
+
+阈值上方与阈值附近的超量请求全部以 HTTP 429 返回，未出现 503、5xx、timeout、connection refused/reset；成功吞吐稳定在约 6.1–7.4 QPS，与 8 QPS 阈值的秒级窗口利用率一致。8 QPS 目标下已有 25.1% 的 429：Sentinel QPS 规则按 1 秒窗口计数，JMeter 的 ConstantThroughputTimer 在响应变慢时会产生秒内突发，属于阈值附近的正常窗口效应，不是服务错误。压测结束后的普通登录为 HTTP 200、业务 code 200。
+
+本轮 enabled 复测未采集容器 CPU：`collect_stats.py` 需要 `VM_PASSWORD` 环境变量建立 SSH 采样，该变量在后台任务环境中未提供，输出为 `Set VM_PASSWORD for SSH access`。不补填推测值；成功吞吐最高 7.37 QPS，低于裸容量 10 QPS（机器 CPU 均值/峰值 69.7%/81.6%），因此 CPU 上界可参考 B.2 的 10 QPS 行，且实际应更低。
+
+### B.5 健康、回退与限制
+
+- 健康检查：`http://192.168.10.102/nginx-health` 返回 200，Nacos readiness 返回 200，Sentinel Dashboard 根路径返回 200；压测后真实登录返回 200；全程无 5xx、timeout、connection refused/reset。
+- 本轮没有重建、重启或删除任何容器，没有修改 auth 业务代码、数据库结构或其它 Sentinel 资源。
+- 回退方式：将 Nacos 与本地 `config/nacos/auth-service-sentinel-flow-dev.json` 同时发布为 `[]` 即关闭 auth-login 流控；恢复时重新发布上面的 8 QPS 规则。阈值是每个 auth JVM 的本地规则，不是集群总配额。
+- 限制：结论来自 4 vCPU / 7,803 MiB、单 auth 实例、共享 14 容器 VM；机器规格、BCrypt 成本因子、实例数变化后必须重测。Topology A 的 3 QPS 结论只适用于 2 vCPU / 3.7 GiB 资源受限环境，不再作为当前阈值依据。
