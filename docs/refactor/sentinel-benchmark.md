@@ -839,7 +839,11 @@ JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，每轮间隔 30 秒；warm-up 20
 - `OssFaultInjectionTest`：默认开关为 false；打开后 `generatePlayUrl` 在 OSS 调用前抛出 `IllegalStateException`。
 - 既有 `flowBlockedPlayUrlReturnsTooManyRequests`、`flowBlockedUploadUrlReturnsTooManyRequests`、`degradeBlockedPlayUrlReturnsVideoServiceUnavailable`、`degradeBlockedUploadUrlReturnsVideoServiceUnavailable` 继续验证 `FlowException → 429`、其它 Block → 503。
 
-**运行态 A/B 未执行，不能声称通过**：本机没有 VM 的 SSH 密码/密钥（`VM_PASSWORD` 未提供，密钥认证被拒），按约束不使用 Windows Docker Desktop，`docker context ls` 只有本地 Docker Desktop 端点，没有可用的远程 Docker context；运行中的 training-service 容器镜像也构建于本次代码修改之前。因此无法在不重建/重启训练服务的前提下打开 `campustrain.oss.fault` 并观察真实 503 与恢复。本轮只报告代码、配置、单元/集成测试证据，不伪造运行态数据。获得 VM 部署访问并获准替换 training-service 容器后，应执行：A) 连续请求无效 `lessonId`，随后有效 `lessonId` 仍为 200；B) Nacos 打开 fault，有效 `lessonId` 返回 503，等待超过 timeWindow=10 秒后关闭 fault，有效请求恢复 200。
+**运行态 A/B 已完成（2026-11-02 16:22–16:28，Topology B）**：先运行 `mvn -pl training-service test`（36 项全部通过，BUILD SUCCESS）和 `mvn -pl training-service clean package -DskipTests`（BUILD SUCCESS）。通过已授权的 VM SSH，仅把最新 JAR 传到 `/opt/campustrain/training-service/target/`，校验 SHA-256，保留旧 JAR 备份；执行 `docker compose build training-service`、`docker compose up -d --no-deps training-service`。training-service 重新变为 healthy，其余容器未重建。全程通过 `http://192.168.10.102/` 的 Nginx → Gateway 入口，使用有效 JWT；未运行容量压测。
+
+- **A（业务异常不触发 degrade）**：Nacos 与 Git 的 OSS fault 开关均为 false。对不存在的 `lessonId=199999999` 连续并发请求 10 次，全部 HTTP 200、响应体 `code=400`；随后立即请求有效视频 `lessonId=199080`，HTTP 200、`code=200`，正常生成 `playUrl`。合法请求未被 503/`DegradeException` 拦截。完整预签名 URL 和 JWT 未记录。
+- **B（系统异常触发 degrade）**：仅在 Nacos 的 `campustrain-dev / CAMPUS_TRAIN / training-service-dev.yaml` 临时将 `campustrain.oss.fault.enabled` 与 `play-url-exception` 设为 true，观察到有效课时请求返回 HTTP 200、响应体 `code=500`（`IllegalStateException` 被全局异常处理封装），确认动态配置已刷新。随后 10 次受控并发请求中 9 次为该系统异常、1 次为 HTTP 503；紧接着 3 次请求均为 HTTP 503、响应体 `code=503` 和“视频服务暂时不可用，请稍后重试”。training-service 日志记录 `resource=oss-play-url`、`blockType=DegradeException`。
+- **恢复与最终配置**：在 `finally` 中发布回原始 Nacos 内容，等待 12 秒（超过 `timeWindow=10s`），有效课时连续 3 次均为 HTTP 200、`code=200`，均生成 `playUrl`。最终再次读回 Nacos，内容与 Git 的 `config/nacos/training-service-dev.yaml` SHA-256 完全一致；两个 fault 开关均为 false。`docker compose ps` 显示 14/14 容器 healthy；Nginx `/nginx-health`、Nacos readiness 均 HTTP 200，Gateway `/actuator/health` 为 `UP`。未修改任何 flow/degrade 阈值、数据库、OSS 对象或 AccessKey。
 
 ### E.7（Topology B）六项资源 enabled 最终高负载验收
 
@@ -908,8 +912,8 @@ JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，每轮间隔 30 秒；warm-up 20
 
 **限制**：
 
-1. 本机没有 VM SSH 密码/密钥，`VM_PASSWORD` 未提供，`collect_stats.py` 无法采集整机 CPU、容器 CPU、load average 和 Swap；所有 Topology B 轮次均输出 `Set VM_PASSWORD for SSH access`。本文不补填推测值，容量结论基于实际吞吐、延迟分位、HTTP 状态码、429/503、dirty set 与 MySQL/Redis 一致性。
-2. 运行态 `oss-play-url` degrade A/B 未执行：修改后的 training-service 代码不在运行容器中，且没有远程 Docker context/部署权限。代码、Nacos 配置、单元/集成测试（8 项全通过）是当前证据；获得部署权限后必须按 E.6 的 A/B 步骤补测，不能把测试通过等同于运行态通过。
+1. 原 Topology B 容量轮次没有向 `collect_stats.py` 提供 `VM_PASSWORD`，因此那些轮次无法采集整机 CPU、容器 CPU、load average 和 Swap，并输出 `Set VM_PASSWORD for SSH access`。本次 E.6 的 A/B 补测已通过授权 SSH 完成部署，但不能倒填历史容量轮次的 CPU 数据；容量结论仍基于当时实际吞吐、延迟分位、HTTP 状态码、429/503、dirty set 与 MySQL/Redis 一致性。
+2. `oss-play-url` degrade 运行态 A/B 已于 2026-11-02 补测完成，证据与恢复结果见 E.6；此前“代码尚未部署”的限制已解除。
 3. 最终验收的 community 轮次只有 1,999 个有效基准用户令牌；首次点赞/取消后 CSV 回收会产生幂等 `changed=false`。因此 E.7 的 like/unlike 轮只证明“高负载下 429 保护与最终一致性”，不替代 D.2/D.4/D.6 用约 11,000 个唯一用户完成的首次点赞/真实取消容量测定。
 4. E.7 learning 轮是异常轮次（成功 64.117 QPS、成功 P95 7,152ms，0 个 503/timeout），与 C.5 同目标轮差异明显；该轮不作为阈值依据，原因受限于无 CPU/线程采样，不能精确归因。
 5. Topology A（2 vCPU / 约 3.7 GiB、swap 明显）的历史数据保留在 B–E 各节前半部分，仅作为资源受限拓扑对照；当前所有阈值均以 Topology B（4 vCPU / 约 7.6 GiB、14 个 healthy 容器）实测为准，不沿用 Topology A 的 3/8/8/8/8/8。
@@ -924,7 +928,7 @@ JMeter 5.6.3 CLI，每轮 60 秒、ramp 5 秒，每轮间隔 30 秒；warm-up 20
 | community-unlike | community-service | flow QPS | 200 QPS（208.563） | 未继续上探（250/300 未测） | 208.563 QPS | 160 | D.4、D.5 |
 | oss-upload-url | training-service | flow QPS | 100 QPS（102.494） | 200 QPS（P95 1,722ms） | 392.296 QPS（含 12 个连接异常） | 80 | E.2、E.4、E.5 |
 | oss-play-url | training-service | flow QPS | 100 QPS（102.284） | 200 QPS（P95 942ms） | 382.501 QPS（含 48 个连接异常） | 80 | E.2、E.4、E.5 |
-| oss-play-url | training-service | degrade（异常比例） | — | — | — | 0.5 / 10s / 5 次 / 1000ms | E.6（代码与测试；运行态 A/B 待部署后补测） |
+| oss-play-url | training-service | degrade（异常比例） | — | — | — | 0.5 / 10s / 5 次 / 1000ms | E.6（代码、测试、运行态 A/B 与恢复均已验证） |
 | training-detail | training-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 800 | 保持不变 |
 | training-enrollment-check | training-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 750 | 保持不变 |
 | enrollment-create | enrollment-service | flow QPS | Stage10 历史值，本轮未重测 | — | — | 160 | 保持不变 |
