@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: campus-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [campus-gateway:8080]
+        labels: {application: campus-gateway}
+  - job_name: auth-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [auth-service:8084]
+        labels: {application: auth-service}
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [user-service:8081]
+        labels: {application: user-service}
+  - job_name: training-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [training-service:8082]
+        labels: {application: training-service}
+  - job_name: enrollment-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [enrollment-service:8083]
+        labels: {application: enrollment-service}
+  - job_name: learning-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [learning-service:8087]
+        labels: {application: learning-service}
+  - job_name: growth-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [growth-service:8088]
+        labels: {application: growth-service}
+  - job_name: community-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [community-service:8090]
+        labels: {application: community-service}
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
