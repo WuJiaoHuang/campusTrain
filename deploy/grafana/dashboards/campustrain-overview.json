@@ -3,7 +3,7 @@
   "editable": false,
   "graphTooltip": 0,
   "panels": [
-    {"title":"Service Up","type":"stat","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (job) (up{job=~\"campus-gateway|auth-service|user-service|training-service|enrollment-service|learning-service|growth-service|community-service\"})","legendFormat":"{{job}}"}],"gridPos":{"h":5,"w":12,"x":0,"y":0}},
+    {"title":"Service Up","type":"stat","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (job) (up{job=~\"$service\"})","legendFormat":"{{job}}"}],"gridPos":{"h":5,"w":12,"x":0,"y":0}},
     {"title":"HTTP QPS","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (job) (rate(http_server_requests_seconds_count{job=~\"$service\"}[1m]))","legendFormat":"{{job}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":0}},
     {"title":"HTTP P95","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"histogram_quantile(0.95, sum by (job,le) (rate(http_server_requests_seconds_bucket{job=~\"$service\"}[5m])))","legendFormat":"{{job}}"}],"gridPos":{"h":8,"w":12,"x":0,"y":8}},
     {"title":"HTTP 5xx Rate","type":"timeseries","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum by (job) (rate(http_server_requests_seconds_count{job=~\"$service\",status=~\"5..\"}[1m])) / sum by (job) (rate(http_server_requests_seconds_count{job=~\"$service\"}[1m]))","legendFormat":"{{job}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":8}},
