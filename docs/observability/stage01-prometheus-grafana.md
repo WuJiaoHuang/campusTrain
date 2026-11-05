@@ -90,8 +90,10 @@ docker compose ps
 
 - histogram 配置：已写入并成功同步 Nacos `CAMPUS_TRAIN/campustrain-dev/campustrain-common-dev.yaml`，配置键为 `management.metrics.distribution.percentiles-histogram.http.server.requests: true`。
 - 本地配置、Dashboard JSON、Compose 配置和文档校验：通过；Nacos GET 回读内容与仓库配置一致。
-- 运行态：未完成本次版本部署。当前 VM 的 Prometheus 返回的是旧的 `monitor-demo` target（`up=0`，目标为 `192.168.10.1:8080`），不是本项目 Compose 中的 9 个 target；VM Grafana `:3000` 和业务 Actuator 端口当前拒绝连接。
-- 因 SSH 公钥/密码认证失败且远程 Docker `2375` 未开放，本次没有上传 JAR、重启或修改任何现有容器，也没有执行 `docker compose down`/`down -v`。
-- 因运行态未切换到本次配置，9/9 targets、Prometheus histogram 实际样本、Grafana 数据源和 8 个 Panel 不能标记为通过；待恢复 VM 部署权限后，需按上文命令执行无破坏滚动部署并重新验收。
+- 运行态部署：已通过 SSH 在 `/opt/campustrain` 完成无破坏更新；未执行 `docker compose down` 或 `down -v`，未删除业务数据卷。旧的独立 `prometheus` 容器仅停止未删除，以释放 9090 给 Compose 管理的 Prometheus。
+- Prometheus：9/9 targets 全部 `up=1`，包括 8 个 Java 服务和 Prometheus 自监控。Prometheus API 实测存在 `http_server_requests_seconds_count`、`http_server_requests_seconds_sum`、`http_server_requests_seconds_bucket`；8 个业务 job 均有 bucket series。
+- P95：PromQL `histogram_quantile(0.95, sum by (job,le) (rate(http_server_requests_seconds_bucket[5m])))` 已返回真实结果；例如 `learning-service=5.531397274863636` 秒（当前窗口样本较少，仅作为运行态连通性证据，不是容量结论）。
+- Grafana：`/api/health` 返回 200；Prometheus Data Source 为默认数据源，URL 为 `http://prometheus:9090`；`CampusTrain Overview` 已加载 8 个 Panel，API 实际读取到的所有 Panel 查询均使用 `$service`，包括 Service Up。
+- Docker：Prometheus、Grafana 及 8 个 Java 服务运行正常；原有 MySQL、Redis、Nacos、RabbitMQ、Nginx、XXL-JOB 容器保持健康。auth-service 额外放行了只读 Actuator 观测端点，未改变登录/JWT 业务权限。
 
 本阶段不建立告警规则，也不根据指标自动修改 Sentinel；Prometheus/Grafana 仅作为后续 AIOps 阶段的只读指标来源。

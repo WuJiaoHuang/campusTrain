@@ -23,7 +23,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/auth/get/token-info").permitAll()
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus", "/actuator/metrics/**").permitAll()
                         .requestMatchers("/doc.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/webjars/**").permitAll()
                         .anyRequest().authenticated()
                 )
